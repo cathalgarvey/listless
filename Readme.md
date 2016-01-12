@@ -75,3 +75,12 @@ Questions:
 
 * When appending to a slice registered in lua with luar, does the original slice
   get modified *always* or only when there's no reallocation? **TODO**
+
+### Database
+`listless` uses BoltDB for databasing, which is a simple bucketed key/value
+database with alphanumeric key iteration.
+
+The database is used for:
+
+* Storing list memberships
+* Storing list archive
