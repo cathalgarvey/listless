@@ -24,7 +24,7 @@ function eventLoop(database, message)
   print("Hello world! Member list is: " .. table.concat(allMembers, ", "))
   message:AddRecipientList(allMembers)
   -- Testing purposes.
-  message.To:append("cathal@formalabs.org")
+  message.To:append("foo@bar.org")
   -- * A reply-to header for the list
   message.SetHeader("reply-to", "mylist@tutanota.com")
   message.AddHeader("list-software", "github.com/cathalgarvey/listless")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"strconv"
 
 	"github.com/yuin/gopher-lua"
@@ -20,6 +21,7 @@ type Config struct {
 	SMTPPort     int
 	smtpAddr     string
 	// Local stuff
+	ListAddress   string
 	Database      string
 	DeliverScript string
 }
@@ -66,6 +68,7 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.SMTPPassword = stringOrNothing(L.GetGlobal("SMTPPassword"))
 	C.SMTPHost = stringOrNothing(L.GetGlobal("SMTPHost"))
 	C.SMTPPort = intOrNothing(L.GetGlobal("SMTPPort"))
+	C.ListAddress = stringOrNothing(L.GetGlobal("ListAddress"))
 	C.Database = stringOrNothing(L.GetGlobal("Database"))
 	C.DeliverScript = stringOrNothing(L.GetGlobal("DeliverScript"))
 	// Sane defaults
@@ -76,5 +79,6 @@ func ConfigFromState(L *lua.LState) *Config {
 		C.SMTPPort = 465
 	}
 	C.smtpAddr = C.SMTPHost + ":" + strconv.Itoa(C.SMTPPort)
+	log.Println("SMTP Address: " + C.smtpAddr)
 	return C
 }

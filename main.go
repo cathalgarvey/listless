@@ -10,6 +10,8 @@ import (
 )
 
 var (
+	// TODO; set two modes, one which runs the list loop, and another that loads
+	// DB/Conf and runs arbitrary lua on them once, to assist with setup.
 	configfile = kingpin.Arg("configfile", "Location of config file.").Required().String()
 )
 
