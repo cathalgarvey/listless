@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
-	"github.com/dchest/validator"
 	"github.com/jordan-wright/email"
 )
 
@@ -89,7 +88,7 @@ func (db *ListlessDB) StoreEmail(e *email.Email) error {
 
 // GetSubscriber - Normalise email and fetch subscriber meta, if any.
 func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	if email == "" {
 		return nil, errors.New("Invalid email given, cannot fetch subscriber.")
 	}
@@ -111,6 +110,17 @@ func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
 	return &sub, nil
 }
 
+// IsModerator - Fetch a subscriber and return whether the "Moderator" flag is true.
+// For unknown addresses the answer is always false.
+// On error, returns false.
+func (db *ListlessDB) IsModerator(email string) bool {
+	sub, err := db.GetSubscriber(email)
+	if err != nil {
+		return false
+	}
+	return sub.Moderator
+}
+
 // AddSubscriber - Validate a new email address and store a MemberMeta record in
 //  the database.
 // If given, meta is used, so this can be used to update records.
@@ -118,7 +128,7 @@ func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
 // Emails are used as keys, with MemberMeta objects being stored as values.
 // This will return an error if an email cannot be validated successfully.
 func (db *ListlessDB) AddSubscriber(email string, meta *MemberMeta) error {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	if email == "" {
 		return errors.New("Invalid email given, cannot add subscriber.")
 	}
@@ -145,7 +155,7 @@ func (db *ListlessDB) AddSubscriber(email string, meta *MemberMeta) error {
 
 // DelSubscriber - Delete a subscriber. Returns no error if subscriber didn't exist.
 func (db *ListlessDB) DelSubscriber(email string) error {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	if email == "" {
 		return errors.New("Invalid email given, cannot delete subscriber.")
 	}

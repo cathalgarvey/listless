@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net/smtp"
 	"strings"
 
 	"github.com/jordan-wright/email"
@@ -132,12 +133,21 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	log.Println("Sending email to CC member list: " + strings.Join(luaMail.Cc, ", "))
 	log.Println("Sending email to BCC member list: " + strings.Join(luaMail.Bcc, ", "))
 	err = nil // Nonono don't send anything
-	//auth := smtp.PlainAuth("", eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
-	//err = luaMail.Send(eng.Config.smtpAddr, auth)
+	auth := smtp.PlainAuth("", eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
+	err = luaMail.Send(eng.Config.smtpAddr, auth)
 	if err != nil {
 		log.Println("Error sending message by SMTP: " + err.Error())
 		return err
 	}
-	return errors.New("Temporary error so my personal mail isn't all marked as read")
-	//	return nil
+	return nil
+}
+
+// ExecOnce - This is exec Mode: Load config and database, ignore eventLoop script.
+// Inject the database into the runtime, and execute the given string as exec Script.
+// Can later add helper functions for Exec mode, like a CSV parser to mass-add
+// list subscribers.
+func (eng *Engine) ExecOnce(script string) error {
+	L := eng.Lua.NewThread()
+	L.SetGlobal("database", luar.New(L, eng.DB))
+	return L.DoString(script)
 }

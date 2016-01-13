@@ -29,7 +29,7 @@ func WrapEmail(e *email.Email) *Email {
 	newe.Email = e
 	newe.inRecipientLists = make(map[string]struct{})
 	sender, _ := parseExpressiveEmail(e.From)
-	newe.Sender = strings.ToLower(normaliseEmail(sender))
+	newe.Sender = normaliseEmail(sender)
 	return newe
 }
 
