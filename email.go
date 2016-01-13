@@ -19,6 +19,7 @@ type Email struct {
 	// Set-like map to keep track of who's already in a recipient list, whether
 	// "To", "CC", or "BCC".
 	inRecipientLists map[string]struct{}
+	Sender           string
 }
 
 // WrapEmail - given an email.Email object, return the wrapper used in this
@@ -27,6 +28,8 @@ func WrapEmail(e *email.Email) *Email {
 	newe := new(Email)
 	newe.Email = e
 	newe.inRecipientLists = make(map[string]struct{})
+	sender, _ := parseExpressiveEmail(e.From)
+	newe.Sender = strings.ToLower(normaliseEmail(sender))
 	return newe
 }
 
@@ -69,7 +72,7 @@ func (em *Email) remRecipient(email string) {
 // AddToRecipient directly adds someone to the To list.
 // Emails are normalised before addition or removal.
 func (em *Email) AddToRecipient(email string) {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	if !em.isRecipient(email) {
 		em.To = append(em.To, email)
 		em.addRecipient(email)
@@ -79,7 +82,7 @@ func (em *Email) AddToRecipient(email string) {
 // AddCcRecipient directly adds someone to the CC list.
 // Emails are normalised before addition or removal.
 func (em *Email) AddCcRecipient(email string) {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	if !em.isRecipient(email) {
 		em.Cc = append(em.Cc, email)
 		em.addRecipient(email)
@@ -89,7 +92,7 @@ func (em *Email) AddCcRecipient(email string) {
 // AddBccRecipient directly adds someone to the BCC list.
 // Emails are normalised before addition or removal.
 func (em *Email) AddBccRecipient(email string) {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	if !em.isRecipient(email) {
 		em.Bcc = append(em.Bcc, email)
 		em.addRecipient(email)
@@ -112,7 +115,7 @@ func (em *Email) AddRecipientList(emails []string) {
 // RemoveRecipient looks for and removes a recipient email. If not found, no
 // error is raised. This is an expensive operation; reallocates To/CC/BCC!
 func (em *Email) RemoveRecipient(email string) {
-	email = validator.NormalizeEmail(email)
+	email = normaliseEmail(email)
 	// Efficiency!
 	if _, present := em.inRecipientLists[email]; !present {
 		return
@@ -160,7 +163,6 @@ func (em *Email) normaliseEmailSlice(field string, emailSlice []string) []string
 		// parseExpressiveEmail()
 		multiEntries := parseMultiExpressiveEmails(entry)
 		for _, e := range multiEntries {
-			log.Println("Range over '" + field + "' entry: " + e)
 			e, err := parseExpressiveEmail(e)
 			if err != nil {
 				log.Println("Error parsing address from '" + field + "' email recipient: " + e)
@@ -172,7 +174,6 @@ func (em *Email) normaliseEmailSlice(field string, emailSlice []string) []string
 			} else {
 				em.inRecipientLists[e] = struct{}{}
 			}
-			log.Println("Appending address to Normalised '" + field + "' list: " + e)
 			newField = append(newField, e)
 		}
 	}
@@ -198,11 +199,19 @@ func (em *Email) NormaliseRecipients() {
 	}
 }
 
+// Strangely, validator doesn't ToLower emails, so "normalisation" can be defeated
+// by different casing. As I'm using it to dedupe and keep track of emails, this
+// isn't good enough..
+func normaliseEmail(email string) string {
+	email = strings.ToLower(email)
+	return validator.NormalizeEmail(email)
+}
+
 // parseExpressiveEmail - Given a line "Foo Bar <foo@bar.com>", return "foo@bar.com".
 // For "foo@bar.com" return simply that!
 func parseExpressiveEmail(emailLine string) (string, error) {
 	emailLine = strings.TrimSpace(emailLine)
-	if normE := validator.NormalizeEmail(emailLine); normE != "" {
+	if normE := normaliseEmail(emailLine); normE != "" {
 		return normE, nil
 	}
 	// - Must have the brackets
@@ -216,7 +225,7 @@ func parseExpressiveEmail(emailLine string) (string, error) {
 		return emailLine, ErrEmailUnparseable
 	}
 	parsed := emailLine[openBr+1 : closBr]
-	normed := validator.NormalizeEmail(parsed)
+	normed := normaliseEmail(parsed)
 	if normed == "" {
 		return emailLine, ErrEmailUnparseable
 	}
@@ -226,7 +235,6 @@ func parseExpressiveEmail(emailLine string) (string, error) {
 // Given a string like "Cathal Garvey <cathal@foo.com>, Stephen Barr <steve@foo.com>"
 // return []string{"Cathal Garvey <cathal@foo.com>", "Stephen Barr <steve@foo.com>"}
 func parseMultiExpressiveEmails(entry string) []string {
-	log.Println("parseMultiExpressiveEmails called on " + entry)
 	// Shortcuts
 	if validator.IsValidEmail(entry) {
 		return []string{entry}
@@ -254,6 +262,5 @@ func parseMultiExpressiveEmails(entry string) []string {
 		entries = append(entries, chunk)
 		i = nextComma + 1
 	}
-	log.Println("parseMultiExpressiveEmails returning: " + strings.Join(entries, " | "))
 	return entries
 }
