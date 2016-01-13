@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"log"
+	"strings"
 
 	"github.com/dchest/validator"
 	"github.com/jordan-wright/email"
@@ -124,45 +126,62 @@ func (em *Email) RemoveRecipient(email string) {
 // This is run prior to calling eventLoop in Lua, and added emails are all
 // normalised under the hood, so there should be no need to call this from Lua.
 func (em *Email) NormaliseRecipients() {
+	// TODO: If-gate all the below to only run if the lists are of nonzero length.
 	newTo := make([]string, 0, len(em.To))
 	for _, e := range em.To {
-		e = validator.NormalizeEmail(e)
+		e, err := parseExpressiveEmail(e)
+		if err != nil {
+			log.Println("Error parsing address from 'To' email recipient: " + e)
+			continue
+		}
 		if _, ok := em.inRecipientLists[e]; ok {
 			log.Println("Skipping recipient as it's already been seen: " + e)
 			continue
 		} else {
 			em.inRecipientLists[e] = struct{}{}
 		}
+		log.Println("Appending address to Normalised 'To' list: " + e)
 		newTo = append(newTo, e)
 	}
 	// Overwrites?
-	em.To = append(em.To[:1], newTo...)
+	em.To = append(em.To[:0], newTo...)
 
 	newCc := make([]string, 0, len(em.Cc))
 	for _, e := range em.Cc {
-		e = validator.NormalizeEmail(e)
+		e, err := parseExpressiveEmail(e)
+		if err != nil {
+			log.Println("Error parsing address from 'CC' email recipient: " + e)
+			continue
+		}
 		if _, ok := em.inRecipientLists[e]; ok {
 			log.Println("Skipping recipient as it's already been seen: " + e)
 			continue
 		} else {
 			em.inRecipientLists[e] = struct{}{}
 		}
+		log.Println("Appending address to Normalised 'CC' list: " + e)
 		newCc = append(newCc, e)
 	}
-	em.Cc = append(em.Cc[:len(em.Cc)], newCc...)
+	em.Cc = append(em.Cc[:0], newCc...)
 
+	// Mostly this won't even run? Incoming mails should have blank Bcc lists.
 	newBcc := make([]string, 0, len(em.Bcc))
 	for _, e := range em.Bcc {
-		e = validator.NormalizeEmail(e)
+		e, err := parseExpressiveEmail(e)
+		if err != nil {
+			log.Println("Error parsing address from 'BCC' email recipient: " + e)
+			continue
+		}
 		if _, ok := em.inRecipientLists[e]; ok {
 			log.Println("Skipping recipient as it's already been seen: " + e)
 			continue
 		} else {
 			em.inRecipientLists[e] = struct{}{}
 		}
+		log.Println("Appending address to Normalised 'Bcc' list: " + e)
 		newBcc = append(newBcc, e)
 	}
-	em.Bcc = append(em.Bcc[:len(em.Bcc)], newBcc...)
+	em.Bcc = append(em.Bcc[:0], newBcc...)
 }
 
 // GetHeader is a direct call to email.Headers.Get
@@ -183,4 +202,32 @@ func (em *Email) DelHeader(key string) {
 // SetHeader is a direct call to email.Headers.Set
 func (em *Email) SetHeader(key, value string) {
 	em.Headers.Set(key, value)
+}
+
+// ErrEmailUnparseable - Returned when a To/CC/BCC entry can't be parsed into a simple Email address.
+var ErrEmailUnparseable = errors.New("Email appears neither a simple ('foo@bar.com') nor expressive ('Foo Bar <foo@bar.com>') construction")
+
+// parseExpressiveEmail - Given a line "Foo Bar <foo@bar.com>", return "foo@bar.com".
+// For "foo@bar.com" return simply that!
+func parseExpressiveEmail(emailLine string) (string, error) {
+	emailLine = strings.TrimSpace(emailLine)
+	if normE := validator.NormalizeEmail(emailLine); normE != "" {
+		return normE, nil
+	}
+	// - Must have the brackets
+	if !(strings.Contains(emailLine, "<") && strings.Contains(emailLine, ">")) {
+		return emailLine, ErrEmailUnparseable
+	}
+	// Brackets must come in correct order.
+	openBr := strings.LastIndex(emailLine, "<")
+	closBr := strings.LastIndex(emailLine, ">")
+	if !(openBr < closBr) {
+		return emailLine, ErrEmailUnparseable
+	}
+	parsed := emailLine[openBr+1 : closBr]
+	normed := validator.NormalizeEmail(parsed)
+	if normed == "" {
+		return emailLine, ErrEmailUnparseable
+	}
+	return normed, nil
 }
