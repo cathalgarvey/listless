@@ -9,6 +9,22 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/jordan-wright/email"
+	"github.com/layeh/gopher-luar"
+)
+
+var (
+	// ErrInvalidEmail - Returned when adding a member fails because email address
+	// is invalid.
+	ErrInvalidEmail = errors.New("Invalid email given, cannot add subscriber")
+
+	// ErrMemberEntryNotFound - Returned when an email has no database entry
+	ErrMemberEntryNotFound = errors.New("Member entry not found by provided email")
+
+	// ErrMemberBucketNotFound - Returned when a database lookup fails at the bucket level.
+	ErrMemberBucketNotFound = errors.New("Member bucket not found")
+
+	// ErrArchiveBucketNotFound - Returned when a database lookup fails at the bucket level.
+	ErrArchiveBucketNotFound = errors.New("Archive bucket not found")
 )
 
 // MemberMeta is the database representation of a subscriber.
@@ -19,6 +35,19 @@ type MemberMeta struct {
 	Moderator bool
 	Name      string
 	Email     string
+}
+
+// CreateSubscriber - Create a new Subscriber. It is not added to the database.
+// This is used to create a Meta object, and may be updated to include any new
+// keys in the MemberMeta object such as may be added.
+func (db *ListlessDB) CreateSubscriber(usremail, usrname string, moderator bool) *MemberMeta {
+	m := MemberMeta{
+		Joindate:  time.Now().Round(time.Hour),
+		Moderator: moderator,
+		Name:      usrname,
+		Email:     usremail,
+	}
+	return &m
 }
 
 // SetJoinDateUTC - Modify Joindate to a manually set date in UTC.
@@ -45,10 +74,8 @@ func NewDatabase(loc string, boltconf ...*bolt.Options) (ldb *ListlessDB, err er
 	ldb = &ListlessDB{}
 	if len(boltconf) == 0 {
 		db, err = bolt.Open(loc, 0600, nil)
-	} else if len(boltconf) == 1 {
-		db, err = bolt.Open(loc, 0600, boltconf[0])
 	} else {
-		return nil, errors.New("Only one bolt.Options instance should be provided.")
+		db, err = bolt.Open(loc, 0600, boltconf[0])
 	}
 	if err != nil {
 		return nil, err
@@ -72,7 +99,7 @@ func (db *ListlessDB) StoreEmail(e *email.Email) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		archive := tx.Bucket([]byte("archive"))
 		if archive == nil {
-			return errors.New("Bucket 'archive' not found!")
+			return ErrArchiveBucketNotFound
 		}
 		key, err := archive.NextSequence()
 		if err != nil {
@@ -86,30 +113,6 @@ func (db *ListlessDB) StoreEmail(e *email.Email) error {
 	})
 }
 
-// GetSubscriber - Normalise email and fetch subscriber meta, if any.
-func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
-	email = normaliseEmail(email)
-	if email == "" {
-		return nil, errors.New("Invalid email given, cannot fetch subscriber.")
-	}
-	sub := MemberMeta{}
-	err := db.View(func(tx *bolt.Tx) error {
-		members := tx.Bucket([]byte("members"))
-		if members == nil {
-			return errors.New("Bucket 'members' not found!")
-		}
-		mementry := members.Get([]byte(email))
-		if mementry == nil {
-			return errors.New("No database entry found for member '" + email + "'")
-		}
-		return json.Unmarshal(mementry, &sub)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &sub, nil
-}
-
 // IsModerator - Fetch a subscriber and return whether the "Moderator" flag is true.
 // For unknown addresses the answer is always false.
 // On error, returns false.
@@ -121,35 +124,49 @@ func (db *ListlessDB) IsModerator(email string) bool {
 	return sub.Moderator
 }
 
-// AddSubscriber - Validate a new email address and store a MemberMeta record in
-//  the database.
-// If given, meta is used, so this can be used to update records.
-// If not given, a new meta is created, with a blank name and the current time.
-// Emails are used as keys, with MemberMeta objects being stored as values.
-// This will return an error if an email cannot be validated successfully.
-func (db *ListlessDB) AddSubscriber(email string, meta *MemberMeta) error {
+// GetSubscriber - Normalise email and fetch subscriber meta, if any.
+func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
 	email = normaliseEmail(email)
 	if email == "" {
-		return errors.New("Invalid email given, cannot add subscriber.")
+		return nil, ErrInvalidEmail
 	}
-	if meta == nil {
-		meta = &MemberMeta{
-			Joindate:  time.Now().Round(time.Hour),
-			Moderator: false,
-			Name:      "",
-			Email:     email,
+	sub := MemberMeta{}
+	err := db.View(func(tx *bolt.Tx) error {
+		members := tx.Bucket([]byte("members"))
+		if members == nil {
+			return ErrMemberBucketNotFound
 		}
+		mementry := members.Get([]byte(email))
+		if mementry == nil {
+			return ErrMemberEntryNotFound
+		}
+		return json.Unmarshal(mementry, &sub)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &sub, nil
+}
+
+// UpdateSubscriber - Validate an email address and store a MemberMeta record in
+//  the database. This can be used to create or update a member. To obtain the
+// meta object, either use GetSubscriber or use CreateSubscriber.
+func (db *ListlessDB) UpdateSubscriber(usremail string, meta *MemberMeta) error {
+	usremail = normaliseEmail(usremail)
+	if usremail == "" {
+		return ErrInvalidEmail
 	}
 	return db.Update(func(tx *bolt.Tx) error {
 		members := tx.Bucket([]byte("members"))
 		if members == nil {
-			return errors.New("Bucket 'members' not found!")
+			return ErrMemberBucketNotFound
 		}
 		mementry, err := json.Marshal(meta)
 		if err != nil {
 			return err
 		}
-		return members.Put([]byte(email), mementry)
+		log.Println("In UpdateSubscriber, updating key '" + usremail + "' with meta: " + string(mementry))
+		return members.Put([]byte(usremail), mementry)
 	})
 }
 
@@ -157,39 +174,58 @@ func (db *ListlessDB) AddSubscriber(email string, meta *MemberMeta) error {
 func (db *ListlessDB) DelSubscriber(email string) error {
 	email = normaliseEmail(email)
 	if email == "" {
-		return errors.New("Invalid email given, cannot delete subscriber.")
+		return ErrInvalidEmail
 	}
 	return db.Update(func(tx *bolt.Tx) error {
 		members := tx.Bucket([]byte("members"))
 		if members == nil {
-			return errors.New("Bucket 'members' not found!")
+			return ErrMemberBucketNotFound
 		}
 		return members.Delete([]byte(email))
 	})
 }
 
+// GetAllSubscribers - This returns a *lua Table* consisting of all subscriber email addresses.
+func (db *ListlessDB) GetAllSubscribers(L *luar.LState) int {
+	mo := false
+	// CheckBool appears to check the type of the indexed item and returns false
+	// by default if it's (absent or?) not a bool, but if it *is* it returns the value.
+	// So, the below should eval "true" if a lua "true" is passed, false otherwise.
+	// TODO: Should the stack be popped of the arg?
+	// This suggests not unless accessing globals: https://stackoverflow.com/questions/1217423/how-to-use-lua-pop-function-correctly
+	if L.CheckBool(1) {
+		mo = true
+	}
+	// Get the subscriber list..
+	subs := db.goGetAllSubscribers(mo)
+	// L.CreateTable does *not* appear to push table onto stack during creation.
+	// The args are the preallocated "listy" allocations and the "tabular" allocs.
+	T := L.CreateTable(len(subs), 0)
+	for _, sub := range subs {
+		// Need to explicitly pass lua.LState rather than luar.LState..
+		T.Append(luar.New(L.LState, sub))
+	}
+	L.Push(T)
+	return 1
+}
+
 // GetAllSubscribers - Return a slice of all member emails.
 // The variadic modsOnly argument is used in order to allow argumentless use
 // within Lua; all booleans after the first are ignored.
-func (db *ListlessDB) GetAllSubscribers(modsOnly ...bool) (subscribers []string) {
-	mo := false
-	if len(modsOnly) > 0 {
-		if modsOnly[0] {
-			mo = true
-		}
-	}
+func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) {
 	subscribers = make([]string, 0)
 	db.View(func(tx *bolt.Tx) error {
 		members := tx.Bucket([]byte("members"))
 		c := members.Cursor()
 		for email, metabytes := c.First(); email != nil; email, _ = c.Next() {
+			log.Printf("Iterating over database member: %s, meta: %s", email, string(metabytes))
 			meta := MemberMeta{}
 			err := json.Unmarshal(metabytes, &meta)
 			if err != nil {
 				log.Printf("Error unmarshalling membermeta for user '%s': %s (meta was: %v)", string(email), err.Error(), metabytes)
 				continue
 			}
-			if mo && (!meta.Moderator) {
+			if modsOnly && (!meta.Moderator) {
 				continue
 			}
 			subscribers = append(subscribers, meta.Email)
