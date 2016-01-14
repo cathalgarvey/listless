@@ -6,81 +6,45 @@ By Cathal Garvey, Copyright 2016, Released under the GNU AGPLv3 or later.
 ### What's This?
 I *love* discussion lists as a way to pull together communities. I used to use
 Google Groups for this, back when I was naive enough to think they respected my
-rights as a human being. While I participate in existing Google Groups now, I
-will no longer create new enclosures for our intellectual commons that rely on
-Google.
+rights as a human being.
 
-However, this leaves me with a problem, because Yahoo and Google's respective
-Discussion group hosting has left a very large gap in the Discussion list
-ecosystem, with the available options for hosting outside their walled gardens
-being either exorbitantly expensive or public-by-default. What if I want a
-private, members-only discussion list for friends or family?
+Since GoogleGroups and Yahoo offered such great free hosting for so long, it turns
+out the ecosystem of Discussion List hosting providers is quite narrow now. Like
+RSS, an anticompetitive free offering destroyed the ecosystem.
 
-I could try to host my own with Mailman, but it requires a high uptime mail server
-whose IP address isn't on a spam blacklist...that's a lot of work and maintenance
-for something as seemingly simple as a discussion list.
+Wanting to set up discussion lists, but unwilling to host on unfriendly shores,
+I was left with seemingly only one option; set up a VPS or home server and run
+GNU Mailman and an entire email stack, plus a domain name to match, and deal with
+all the grief that accrues to that due to misguided spam blacklisting and other
+blights upon the email system.
 
-I thought it was strange that options available to me couldn't run a list using
-a straightforward IMAP/SMTP account, something that anyone can get hosted by
-respect-worthy services like [Tutanota](). All I really want from a Discussion
-List (that is, the indispensible features) is:
+I'd often been puzzled as to why no options exist for running Discussion lists
+over IMAP/SMTP, common protocols available on almost all hosted email providers.
+I can create IMAP/SMTP accounts for my domains on Shared Hosting with [1984 Hosting](https://1984hosting.com),
+trivially, so if I could only use those to host discussion lists I'd have no problems.
 
-* Has a membership list
-* When receiving mail from anyone on this list, forwards to the whole list
-* Makes optional changes to subject line and/or message body, to assist in
-  group cohesion and to facilitate mail filtering by members
+So, I decided to write my own, and **listless** was created.
 
-Wholly optionally, the following features are nice:
+Right now, **listless** doesn't actually work. I'm working on it. The base feature
+set that will come with it is:
 
-* Some members can issue instructions to the List via Email (mods)
-* These instructions can include adding, removing, or changing the status of
-  members
-* Archiving
+* Configuration in lua, being as simple as a set of `Option = value` pairs, or
+  as complex as a fully blown script with `os` calls to execute local commands.
+* An event loop for incoming mail (over IMAP) that's scripted in Lua
+    - Where the event loop receives a parsed form of incoming mail
+    - Where the event loop receives the local database as an object to update or
+      query.
+    - Where the event loop can also execute local commands, leveraging the full
+      (though hazardous!) power of lua's `io` and `os` modules.
+* A local database management system that accepts Lua scripts, allowing arbitrary
+  local modifications by script. Want to load in a huge CSV of subscribers? Just
+  write or borrow a lua script for that. Want to fetch new subscribers from a HTTP
+  resource? Shell out to wget.
+* Archival storage of list traffic in a local database. At present this is dumb
+  storage, however.
 
-The critical list doesn't seem too difficult to implement, so I've started doing
-so. My goal with `listless` is to create a list control agent that can be configured
-with an IMAP/SMTP email account and a membership list, and forwards all incoming
-mail after optionally changing the subject line. Everything else is optional and
-will probably be implemented using a Lua scripting engine, later.
-
-### Architecture
-`listless` iterates over all incoming mail, and runs the following sequence of
-events:
-
-0. Unread mail fetched and dispatched to event loop (Thanks to [IMAPClient](github.com/tgulacsi/imapclient))
-1. Mail parsed: if failure, bounce.
-2. Sender identified: if member, continue. Else, bounce.
-3. Message struct is passed to default or owner-provided mail handling script (lua).
-    1. Can access and change subject line.
-    2. Can access and change body.
-    3. Can access and change member list database, which includes markup on user groups.
-    4. Can decide whether to discard message or not.
-    5. Can decide whether to send message to a subset of members only (i.e., mods, or reply to sender only?)
-    6. Can implement, if desired, a DSL for modcommands.
-4. Message passed back to Go, and reassembled.
-5. Message is sent using SMTP to all recipients in message's "To" entry.
-
-### Progress
-Implemented:
-
-* Untested event loop that fetches unread email from an IMAP account and passes it
-  to a bare lua script defined by a lua config file.
-
-Unimplemented:
-
-* Helper functions for the Lua event script
-* Database operations and lua interface thereto
-
-Questions:
-
-* When appending to a slice registered in lua with luar, does the original slice
-  get modified *always* or only when there's no reallocation? **TODO**
-
-### Database
-`listless` uses BoltDB for databasing, which is a simple bucketed key/value
-database with alphanumeric key iteration.
-
-The database is used for:
-
-* Storing list memberships
-* Storing list archive
+Later, I'd like to add:
+* Limited, somewhat more secure Lua scripting over email by moderators.
+* More granular access control API added to the Lua runtime for the event loop, so
+  that less freeform lists can be hacked up easily.
+* Search functions for the archive.

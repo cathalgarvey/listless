@@ -42,7 +42,6 @@ func main() {
 
 func loopModeF() {
 	log.Println("Starting Listless in loop mode. Hello!")
-	log.Println("Reading configuration file: " + *loopConfigfile)
 	config := loadSettings(*loopConfigfile)
 	log.Println("Loading engine..")
 	engine, err := NewEngine(config)
@@ -57,7 +56,6 @@ func loopModeF() {
 
 func execModeF() {
 	log.Println("Starting Listless in loop mode. Hello!")
-	log.Println("Reading configuration file: " + *execConfigfile)
 	config := loadSettings(*execConfigfile)
 	log.Println("Loading engine..")
 	engine, err := NewEngine(config)
