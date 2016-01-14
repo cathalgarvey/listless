@@ -7,6 +7,8 @@ import (
 
 	"github.com/dchest/validator"
 	"github.com/jordan-wright/email"
+	"github.com/layeh/gopher-luar"
+	"github.com/yuin/gopher-lua"
 )
 
 // ErrEmailUnparseable - Returned when a To/CC/BCC entry can't be parsed into a simple Email address.
@@ -73,6 +75,9 @@ func (em *Email) remRecipient(email string) {
 // Emails are normalised before addition or removal.
 func (em *Email) AddToRecipient(email string) {
 	email = normaliseEmail(email)
+	if email == "" {
+		return
+	}
 	if !em.isRecipient(email) {
 		em.To = append(em.To, email)
 		em.addRecipient(email)
@@ -83,6 +88,9 @@ func (em *Email) AddToRecipient(email string) {
 // Emails are normalised before addition or removal.
 func (em *Email) AddCcRecipient(email string) {
 	email = normaliseEmail(email)
+	if email == "" {
+		return
+	}
 	if !em.isRecipient(email) {
 		em.Cc = append(em.Cc, email)
 		em.addRecipient(email)
@@ -93,6 +101,9 @@ func (em *Email) AddCcRecipient(email string) {
 // Emails are normalised before addition or removal.
 func (em *Email) AddBccRecipient(email string) {
 	email = normaliseEmail(email)
+	if email == "" {
+		return
+	}
 	if !em.isRecipient(email) {
 		em.Bcc = append(em.Bcc, email)
 		em.addRecipient(email)
@@ -104,46 +115,83 @@ func (em *Email) AddRecipient(email string) {
 	em.AddBccRecipient(email)
 }
 
-// AddRecipientList adds a slice/list-table of recipients to the BCC list. This
+// AddRecipientList adds a lua list-table of recipients to the BCC list. This
 // is the usual/recommended way to add subscribers to the list.
-func (em *Email) AddRecipientList(emails []string) {
+func (em *Email) AddRecipientList(L *luar.LState) int {
+	if recipientListTable, ok := L.Get(1).(*lua.LTable); ok {
+		recipientListTable.ForEach(func(idx, emailAddrV lua.LValue) {
+			em.AddRecipient(emailAddrV.String())
+		})
+		return 0
+	}
+	L.RaiseError("AddRecipientList expected a table, got something else.")
+	return 0
+}
+
+func (em *Email) goAddRecipientList(emails []string) {
 	for _, e := range emails {
 		em.AddRecipient(e)
 	}
 }
 
+// ClearRecipients removes all To/CC/BCC recipients.
+func (em *Email) ClearRecipients() {
+	em.To = em.To[:0]
+	em.Cc = em.Cc[:0]
+	em.Bcc = em.Bcc[:0]
+}
+
 // RemoveRecipient looks for and removes a recipient email. If not found, no
 // error is raised. This is an expensive operation; reallocates To/CC/BCC!
+// To minimise impact this assumes the roster of emails is correct and that
+// email normalisation successfully deduplicated recipients, so it stops after
+// the first such reallocation that encounters the specified email address.
 func (em *Email) RemoveRecipient(email string) {
 	email = normaliseEmail(email)
 	// Efficiency!
 	if _, present := em.inRecipientLists[email]; !present {
 		return
 	}
+
+	removed := false
+
 	newTo := make([]string, 0, len(em.To))
 	for _, e := range em.To {
 		if e == email {
+			removed = true
 			continue
 		}
 		newTo = append(newTo, e)
 	}
-	em.To = newTo
-	newCc := make([]string, 0, len(em.Cc))
-	for _, e := range em.Cc {
-		if e == email {
-			continue
+	em.To = append(em.To[:0], newTo...)
+
+	// Minor efficiencies; assuming normalisation already deduplicated all these
+	// lists, and that the recipient set is accurate, then having removed the
+	// address from any one list it should be assumed absent already from the rest.
+	if !removed {
+		newCc := make([]string, 0, len(em.Cc))
+		for _, e := range em.Cc {
+			if e == email {
+				removed = true
+				continue
+			}
+			newCc = append(newCc, e)
 		}
-		newCc = append(newCc, e)
+		em.Cc = append(em.Cc[:0], newCc...)
 	}
-	em.Cc = newCc
-	newBcc := make([]string, 0, len(em.Bcc))
-	for _, e := range em.Bcc {
-		if e == email {
-			continue
+
+	if !removed {
+		newBcc := make([]string, 0, len(em.Bcc))
+		for _, e := range em.Bcc {
+			if e == email {
+				continue
+			}
+			newBcc = append(newBcc, e)
 		}
-		newBcc = append(newBcc, e)
+		em.Bcc = append(em.Bcc[:0], newBcc...)
 	}
-	em.Bcc = newBcc
+
+	// Remove from recipient set
 	em.remRecipient(email)
 }
 

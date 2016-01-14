@@ -31,21 +31,23 @@ var (
 // This is all pretty pedestrian but note that "Joindate" is a Go time object,
 // so consult the documentation for how to extract data using time methods.
 type MemberMeta struct {
-	Joindate  time.Time
-	Moderator bool
-	Name      string
-	Email     string
+	Joindate    time.Time
+	Moderator   bool
+	AllowedPost bool
+	Name        string
+	Email       string
 }
 
 // CreateSubscriber - Create a new Subscriber. It is not added to the database.
 // This is used to create a Meta object, and may be updated to include any new
 // keys in the MemberMeta object such as may be added.
-func (db *ListlessDB) CreateSubscriber(usremail, usrname string, moderator bool) *MemberMeta {
+func (db *ListlessDB) CreateSubscriber(usremail, usrname string, allowedpost, moderator bool) *MemberMeta {
 	m := MemberMeta{
-		Joindate:  time.Now().Round(time.Hour),
-		Moderator: moderator,
-		Name:      usrname,
-		Email:     usremail,
+		Joindate:    time.Now().Round(time.Hour),
+		Moderator:   moderator,
+		AllowedPost: allowedpost,
+		Name:        usrname,
+		Email:       usremail,
 	}
 	return &m
 }
@@ -124,6 +126,17 @@ func (db *ListlessDB) IsModerator(email string) bool {
 	return sub.Moderator
 }
 
+// IsAllowedPost - Fetch a subscriber and return whether the "AllowedPost" flag is true.
+// For unknown addresses the answer is always false.
+// On error, returns false.
+func (db *ListlessDB) IsAllowedPost(email string) bool {
+	sub, err := db.GetSubscriber(email)
+	if err != nil {
+		return false
+	}
+	return sub.AllowedPost
+}
+
 // GetSubscriber - Normalise email and fetch subscriber meta, if any.
 func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
 	email = normaliseEmail(email)
@@ -165,7 +178,6 @@ func (db *ListlessDB) UpdateSubscriber(usremail string, meta *MemberMeta) error 
 		if err != nil {
 			return err
 		}
-		log.Println("In UpdateSubscriber, updating key '" + usremail + "' with meta: " + string(mementry))
 		return members.Put([]byte(usremail), mementry)
 	})
 }
@@ -214,24 +226,24 @@ func (db *ListlessDB) GetAllSubscribers(L *luar.LState) int {
 // within Lua; all booleans after the first are ignored.
 func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) {
 	subscribers = make([]string, 0)
-	db.View(func(tx *bolt.Tx) error {
+	err := db.View(func(tx *bolt.Tx) error {
 		members := tx.Bucket([]byte("members"))
-		c := members.Cursor()
-		for email, metabytes := c.First(); email != nil; email, _ = c.Next() {
-			log.Printf("Iterating over database member: %s, meta: %s", email, string(metabytes))
+		return members.ForEach(func(email, metabytes []byte) error {
 			meta := MemberMeta{}
 			err := json.Unmarshal(metabytes, &meta)
 			if err != nil {
-				log.Printf("Error unmarshalling membermeta for user '%s': %s (meta was: %v)", string(email), err.Error(), metabytes)
-				continue
+				return err
 			}
 			if modsOnly && (!meta.Moderator) {
-				continue
+				return nil
 			}
 			subscribers = append(subscribers, meta.Email)
-		}
-		return nil
+			return nil
+		})
 	})
+	if err != nil {
+		log.Printf("Error in goGetAllSubscribers: %s", err.Error())
+	}
 	return subscribers
 }
 

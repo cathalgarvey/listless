@@ -83,6 +83,7 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 			NRet:    3, // Number of returned arguments?
 			Protect: true,
 		},
+		luar.New(L, eng.Config),
 		luar.New(L, eng.DB),
 		luar.New(L, e))
 	if err != nil {
@@ -114,11 +115,11 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 		log.Println("Received email but failed to parse: " + err.Error())
 		return err
 	}
+	// Check for header indicating this was sent BY the list to itself (common pattern)
+	if thismail.Headers.Get("sent-from-listless") == eng.Config.ListAddress {
+		return nil
+	}
 	log.Println("Received mail addressed TO: " + strings.Join(thismail.To, ", "))
-	// TODO: Need a way to identify mails that have just been processed and sent.
-	// That way, can sent TO list address, so that SMTP servers are happy, but
-	// won't end up infini-looping mail through self.
-	// Suggestion: Add a header?
 	luaMail := WrapEmail(thismail)
 	ok, err := eng.ProcessMail(luaMail)
 	if err != nil {
@@ -132,7 +133,9 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	log.Println("Sending email to TO member list: " + strings.Join(luaMail.To, ", "))
 	log.Println("Sending email to CC member list: " + strings.Join(luaMail.Cc, ", "))
 	log.Println("Sending email to BCC member list: " + strings.Join(luaMail.Bcc, ", "))
-	err = nil // Nonono don't send anything
+	// Set header to indicate that this was sent by Listless, in case it loops around
+	// somehow (some lists retain the "To: <list@address.com>" header unchanged).
+	luaMail.Headers.Set("sent-from-listless", eng.Config.ListAddress)
 	auth := smtp.PlainAuth("", eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
 	err = luaMail.Send(eng.Config.smtpAddr, auth)
 	if err != nil {
