@@ -42,10 +42,36 @@ set right now is:
   write or borrow a lua script for that. Want to fetch new subscribers from a HTTP
   resource? Shell out to wget.
 
-Later, I'd like to add:
+
+### Usage / Setup
+1. Get or create an email account that supports IMAP/SMTP. I use my shared hosting
+   account at [1984hosting.com](https://1984hosting.com), who are awesome by the way.
+2. Create a configuration file like the one in "sample_config.lua" containing your
+   account details, and editing details like "SubjectTag" in the Constants table to
+   your liking.
+3. Create or copy/modify a lua script containing a function named `eventLoop` which
+   receives as arguments `config, database, message`. The one given in `default_eventloop.lua`
+   is a simple members-only mailing list which prepends message subjects with the "SubjectTag"
+   string, if given.
+4. Add some subscribers; Right now, this requires executing a lua script
+   (via-mail moderator commands are [a planned feature](https://github.com/cathalgarvey/listless/issues/3)!)
+    * Create a lua script similar to `sample_setup.lua`; see that file for inline
+      documentation of how to use the database object to create and add subscribers.
+    * Execute your file in the context of the configuration file: `./listless my_config.lua my_setup.lua`
+5. Initiate the DeliveryLoop, which will iterate through incoming mail and execute `eventLoop`
+   for each incoming email.
+6. Try sending some email!
+
+### Desired / Planned Features
+* Real documentation of the Lua API.
 * Archival storage of list traffic in a local database. Database methods exist
-  to implement this, but at present this is dumb storage, however.
-* Limited, somewhat more secure Lua scripting over email by moderators.
+  to implement this, but at present this is dumb storage, however. Maybe ditch
+  this in favour of exposing Key/Value databasing to Lua and leaving eventLoop
+  authors decide whether to store mail.
+* Limited, somewhat more secure Lua scripting over email by moderators. See [relevant issue for thoughts on "console threads" idea.](https://github.com/cathalgarvey/listless/issues/3)
+* Key/Value store API in Lua, so eventLoops can store state/data/records. This could
+  even then replace a hardcoded list archive function and leave that to Lua.
+  [See relevant issue](https://github.com/cathalgarvey/listless/issues/4).
 * More granular access control API added to the Lua runtime for the event loop, so
   that less freeform lists can be hacked up easily.
 * Search functions for the archive.

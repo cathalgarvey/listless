@@ -155,9 +155,9 @@ func (eng *Engine) DeliveryLoop(c imapclient.Client, inbox, pattern string, deli
 	for {
 		n, err := imapclient.DeliverOne(c, inbox, pattern, deliver, outbox, errbox)
 		if err != nil {
-			log.Println("DeliveryLoop one round", "n", n, "error", err)
+			log.Println("Error during DeliveryLoop cycle - ", "Deliveries:", n, "; Error:", err)
 		} else {
-			log.Println("DeliveryLoop one round", "n", n)
+			log.Println("DeliveryLoop delivered: ", n)
 		}
 		select {
 		case _, ok := <-closeCh:
@@ -186,6 +186,7 @@ func (eng *Engine) DeliveryLoop(c imapclient.Client, inbox, pattern string, deli
 // list subscribers.
 func (eng *Engine) ExecOnce(script string) error {
 	L := eng.Lua.NewThread()
+	L.SetGlobal("config", luar.New(L, eng.Config))
 	L.SetGlobal("database", luar.New(L, eng.DB))
 	return L.DoString(script)
 }
