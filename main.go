@@ -49,7 +49,7 @@ func loopModeF() {
 	}
 	log.Println("Starting event loop.")
 	// Setup main loop, run forevs.
-	go engine.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
+	engine.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
 	//imapclient.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
 	log.Println("Exited DeliveryLoop successfully, shutting down.")
 }
