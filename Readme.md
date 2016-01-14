@@ -25,11 +25,12 @@ trivially, so if I could only use those to host discussion lists I'd have no pro
 
 So, I decided to write my own, and **listless** was created.
 
-Right now, **listless** doesn't actually work. I'm working on it. The base feature
-set that will come with it is:
+Right now, **listless** barely works. I'm working on it. The base feature
+set right now is:
 
 * Configuration in lua, being as simple as a set of `Option = value` pairs, or
   as complex as a fully blown script with `os` calls to execute local commands.
+  See "sample_config.lua"
 * An event loop for incoming mail (over IMAP) that's scripted in Lua
     - Where the event loop receives a parsed form of incoming mail
     - Where the event loop receives the local database as an object to update or
@@ -40,10 +41,10 @@ set that will come with it is:
   local modifications by script. Want to load in a huge CSV of subscribers? Just
   write or borrow a lua script for that. Want to fetch new subscribers from a HTTP
   resource? Shell out to wget.
-* Archival storage of list traffic in a local database. At present this is dumb
-  storage, however.
 
 Later, I'd like to add:
+* Archival storage of list traffic in a local database. Database methods exist
+  to implement this, but at present this is dumb storage, however.
 * Limited, somewhat more secure Lua scripting over email by moderators.
 * More granular access control API added to the Lua runtime for the event loop, so
   that less freeform lists can be hacked up easily.

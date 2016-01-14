@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/jordan-wright/email"
 	"github.com/layeh/gopher-luar"
@@ -110,6 +111,7 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 // interface required by imapclient but is a method attached to a set of rich state
 // objects.
 func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
+	imapclient.LongSleep = time.Duration(eng.Config.PollFrequency) * time.Second
 	thismail, err := email.NewEmailFromReader(r)
 	if err != nil {
 		log.Println("Received email but failed to parse: " + err.Error())
@@ -131,19 +133,18 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 		return nil
 	}
 	log.Println("Outgoing email subject: " + luaMail.Subject)
-	log.Println("Sending email to TO member list: " + strings.Join(luaMail.To, ", "))
-	log.Println("Sending email to CC member list: " + strings.Join(luaMail.Cc, ", "))
-	log.Println("Sending email to BCC member list: " + strings.Join(luaMail.Bcc, ", "))
 	// Set header to indicate that this was sent by Listless, in case it loops around
 	// somehow (some lists retain the "To: <list@address.com>" header unchanged).
 	luaMail.Headers.Set("sent-from-listless", eng.Config.ListAddress)
 	auth := smtp.PlainAuth("", eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
 	//auth := smtp.PlainAuth(eng.Config.SMTPUsername, eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
-	err = luaMail.Send(eng.Config.smtpAddr, auth)
+	// Patched to allow excluding of variadic emails added after auth.
+	err = luaMail.Send(eng.Config.smtpAddr, auth, eng.Config.ListAddress)
 	if err != nil {
 		log.Println("Error sending message by SMTP: " + err.Error())
 		return err
 	}
+	log.Println("Sent message successfully: " + luaMail.Subject)
 	return nil
 }
 

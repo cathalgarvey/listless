@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"log"
+	"net/mail"
+	"net/smtp"
 	"strings"
 
 	"github.com/dchest/validator"
@@ -318,4 +320,49 @@ func parseMultiExpressiveEmails(entry string) []string {
 		i = nextComma + 1
 	}
 	return entries
+}
+
+// Send an email using the given host and SMTP auth (optional), returns any error thrown by smtp.SendMail
+// This function merges the To, Cc, and Bcc fields and calls the smtp.SendMail function using the Email.Bytes() output as the message
+// Shadows the Send method of email.Email because:
+//  - The email roster already provides a list of recipients, so it'll be a little
+//    more efficient
+//  - (More urgently) avoid bounce notices by avoiding sending to the list address!
+func (em *Email) Send(addr string, a smtp.Auth, excludeEmails ...string) error {
+	nuexcludeEmails := make(map[string]struct{})
+	for _, e := range excludeEmails {
+		e = normaliseEmail(e)
+		if e == "" {
+			continue
+		}
+		nuexcludeEmails[e] = struct{}{}
+	}
+	// Merge the To, Cc, and Bcc fields, minus excluded emails.
+	to := make([]string, 0, len(em.To)+len(em.Cc)+len(em.Bcc)-len(nuexcludeEmails))
+	for k := range em.inRecipientLists {
+		if _, ok := nuexcludeEmails[k]; ok {
+			continue
+		}
+		to = append(to, k)
+	}
+	for i := 0; i < len(to); i++ {
+		addr, err := mail.ParseAddress(to[i])
+		if err != nil {
+			return err
+		}
+		to[i] = addr.Address
+	}
+	// Check to make sure there is at least one recipient and one "From" address
+	if em.From == "" || len(to) == 0 {
+		return errors.New("Must specify at least one From address and one To address")
+	}
+	from, err := mail.ParseAddress(em.From)
+	if err != nil {
+		return err
+	}
+	raw, err := em.Bytes()
+	if err != nil {
+		return err
+	}
+	return smtp.SendMail(addr, a, from.Address, to, raw)
 }

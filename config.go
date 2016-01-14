@@ -24,6 +24,7 @@ type Config struct {
 	ListAddress   string
 	Database      string
 	DeliverScript string
+	PollFrequency int // Seconds
 	Constants     map[string]string
 }
 
@@ -74,6 +75,7 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.ListAddress = stringOrNothing(L.GetGlobal("ListAddress"))
 	C.Database = stringOrNothing(L.GetGlobal("Database"))
 	C.DeliverScript = stringOrNothing(L.GetGlobal("DeliverScript"))
+	C.PollFrequency = intOrNothing(L.GetGlobal("PollFrequency"))
 	// Sane defaults
 	if C.IMAPPort == -1 {
 		log.Println("Assuming port 143 for IMAPPort config option.")
@@ -87,6 +89,9 @@ func ConfigFromState(L *lua.LState) *Config {
 	if C.ListAddress == "" {
 		C.ListAddress = C.SMTPUsername + "@" + C.SMTPHost
 		log.Println("Setting 'ListAddress' configuration option to " + C.ListAddress + " as this field is required and must be reasonably unique. Set manually if incorrect.")
+	}
+	if C.PollFrequency == -1 {
+		C.PollFrequency = 60
 	}
 	C.Constants = make(map[string]string)
 	if constantsTable, ok := L.GetGlobal("Constants").(*lua.LTable); ok {
