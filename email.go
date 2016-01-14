@@ -71,6 +71,11 @@ func (em *Email) remRecipient(email string) {
 	delete(em.inRecipientLists, email)
 }
 
+// Clear all recipients in roster
+func (em *Email) clearRecipients() {
+	em.inRecipientLists = make(map[string]struct{})
+}
+
 // AddToRecipient directly adds someone to the To list.
 // Emails are normalised before addition or removal.
 func (em *Email) AddToRecipient(email string) {
@@ -139,6 +144,7 @@ func (em *Email) ClearRecipients() {
 	em.To = em.To[:0]
 	em.Cc = em.Cc[:0]
 	em.Bcc = em.Bcc[:0]
+	em.clearRecipients()
 }
 
 // RemoveRecipient looks for and removes a recipient email. If not found, no
