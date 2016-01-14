@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/alecthomas/kingpin"
-	"github.com/tgulacsi/imapclient"
 	"github.com/yuin/gopher-lua"
 )
 
@@ -50,7 +49,8 @@ func loopModeF() {
 	}
 	log.Println("Starting event loop.")
 	// Setup main loop, run forevs.
-	imapclient.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
+	go engine.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
+	//imapclient.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
 	log.Println("Exited DeliveryLoop successfully, shutting down.")
 }
 

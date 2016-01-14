@@ -111,7 +111,6 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 // interface required by imapclient but is a method attached to a set of rich state
 // objects.
 func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
-	imapclient.LongSleep = time.Duration(eng.Config.PollFrequency) * time.Second
 	thismail, err := email.NewEmailFromReader(r)
 	if err != nil {
 		log.Println("Received email but failed to parse: " + err.Error())
@@ -146,6 +145,39 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	}
 	log.Println("Sent message successfully: " + luaMail.Subject)
 	return nil
+}
+
+// DeliveryLoop is the poll loop for listless, mostly lifted from imapclient.
+func (eng *Engine) DeliveryLoop(c imapclient.Client, inbox, pattern string, deliver imapclient.DeliverFunc, outbox, errbox string, closeCh <-chan struct{}) {
+	if inbox == "" {
+		inbox = "INBOX"
+	}
+	for {
+		n, err := imapclient.DeliverOne(c, inbox, pattern, deliver, outbox, errbox)
+		if err != nil {
+			log.Println("DeliveryLoop one round", "n", n, "error", err)
+		} else {
+			log.Println("DeliveryLoop one round", "n", n)
+		}
+		select {
+		case _, ok := <-closeCh:
+			if !ok { //channel is closed
+				return
+			}
+		default:
+		}
+
+		if err != nil {
+			<-time.After(time.Duration(eng.Config.PollFrequency) * time.Second)
+			continue
+		}
+		if n > 0 {
+			<-time.After(time.Duration(eng.Config.MessageFrequency) * time.Second)
+		} else {
+			<-time.After(time.Duration(eng.Config.PollFrequency) * time.Second)
+		}
+		continue
+	}
 }
 
 // ExecOnce - This is exec Mode: Load config and database, ignore eventLoop script.

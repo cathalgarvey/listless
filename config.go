@@ -21,11 +21,12 @@ type Config struct {
 	SMTPPort     int
 	smtpAddr     string
 	// Local stuff
-	ListAddress   string
-	Database      string
-	DeliverScript string
-	PollFrequency int // Seconds
-	Constants     map[string]string
+	ListAddress      string
+	Database         string
+	DeliverScript    string
+	MessageFrequency int
+	PollFrequency    int // Seconds
+	Constants        map[string]string
 }
 
 // Returns "" if failed to parse.
@@ -37,13 +38,13 @@ func stringOrNothing(l lua.LValue) string {
 }
 
 // Returns -1 if failed.
-func intOrNothing(l lua.LValue) int {
+func intOrDefault(l lua.LValue, def int) int {
 	if l.Type() != lua.LTNumber {
 		return -1
 	}
 	i, err := strconv.Atoi(l.String())
 	if err != nil {
-		return -1
+		return def
 	}
 	return i
 }
@@ -67,31 +68,20 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.IMAPUsername = stringOrNothing(L.GetGlobal("IMAPUsername"))
 	C.IMAPPassword = stringOrNothing(L.GetGlobal("IMAPPassword"))
 	C.IMAPHost = stringOrNothing(L.GetGlobal("IMAPHost"))
-	C.IMAPPort = intOrNothing(L.GetGlobal("IMAPPort"))
+	C.IMAPPort = intOrDefault(L.GetGlobal("IMAPPort"), 143)
 	C.SMTPUsername = stringOrNothing(L.GetGlobal("SMTPUsername"))
 	C.SMTPPassword = stringOrNothing(L.GetGlobal("SMTPPassword"))
 	C.SMTPHost = stringOrNothing(L.GetGlobal("SMTPHost"))
-	C.SMTPPort = intOrNothing(L.GetGlobal("SMTPPort"))
+	C.SMTPPort = intOrDefault(L.GetGlobal("SMTPPort"), 465)
 	C.ListAddress = stringOrNothing(L.GetGlobal("ListAddress"))
 	C.Database = stringOrNothing(L.GetGlobal("Database"))
 	C.DeliverScript = stringOrNothing(L.GetGlobal("DeliverScript"))
-	C.PollFrequency = intOrNothing(L.GetGlobal("PollFrequency"))
-	// Sane defaults
-	if C.IMAPPort == -1 {
-		log.Println("Assuming port 143 for IMAPPort config option.")
-		C.IMAPPort = 143
-	}
-	if C.SMTPPort == -1 {
-		log.Println("Assuming port 465 for SMTPPort config option.")
-		C.SMTPPort = 465
-	}
+	C.MessageFrequency = intOrDefault(L.GetGlobal("MessageFrequency"), 1)
+	C.PollFrequency = intOrDefault(L.GetGlobal("PollFrequency"), 60)
 	C.smtpAddr = C.SMTPHost + ":" + strconv.Itoa(C.SMTPPort)
 	if C.ListAddress == "" {
 		C.ListAddress = C.SMTPUsername + "@" + C.SMTPHost
 		log.Println("Setting 'ListAddress' configuration option to " + C.ListAddress + " as this field is required and must be reasonably unique. Set manually if incorrect.")
-	}
-	if C.PollFrequency == -1 {
-		C.PollFrequency = 60
 	}
 	C.Constants = make(map[string]string)
 	if constantsTable, ok := L.GetGlobal("Constants").(*lua.LTable); ok {

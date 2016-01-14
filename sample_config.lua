@@ -7,6 +7,7 @@
 ListAddress = "some_list@host.com"  -- Should be provided for correct operation!
 DeliverScript = "./default_eventloop.lua"  -- Needs to be provided in "loop" mode to handle incoming mail.
 Database      = "./some_list.db"  -- Created if doesn't exist.
+MessageFrequency = 0 -- Seconds between each message during a poll over inbox
 PollFrequency = 30  -- Seconds to wait once inbox is empty before polling again.
 Constants = {SubjectTag = "[laundrylist]"}  -- Anything put in here is available in eventLoop. Only supports String->String values.
 -- Account options:
