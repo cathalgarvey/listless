@@ -215,6 +215,7 @@ func (em *Email) normaliseEmailSlice(field string, emailSlice []string) []string
 		// First, split multi-entry bits if necessary.. Look for ">" chars that don't
 		// end the line, and try to extract emails from each such substring using
 		// parseExpressiveEmail()
+		// TODO: Replace parseMultiExpressiveEmails with https://golang.org/pkg/net/mail/#ParseAddressList
 		multiEntries := parseMultiExpressiveEmails(entry)
 		for _, e := range multiEntries {
 			e, err := parseExpressiveEmail(e)

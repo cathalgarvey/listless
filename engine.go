@@ -130,6 +130,7 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 		log.Println("No error occurred but not sending message.")
 		return nil
 	}
+	log.Println("Outgoing email subject: " + luaMail.Subject)
 	log.Println("Sending email to TO member list: " + strings.Join(luaMail.To, ", "))
 	log.Println("Sending email to CC member list: " + strings.Join(luaMail.Cc, ", "))
 	log.Println("Sending email to BCC member list: " + strings.Join(luaMail.Bcc, ", "))
@@ -137,6 +138,7 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	// somehow (some lists retain the "To: <list@address.com>" header unchanged).
 	luaMail.Headers.Set("sent-from-listless", eng.Config.ListAddress)
 	auth := smtp.PlainAuth("", eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
+	//auth := smtp.PlainAuth(eng.Config.SMTPUsername, eng.Config.SMTPUsername, eng.Config.SMTPPassword, eng.Config.SMTPHost)
 	err = luaMail.Send(eng.Config.smtpAddr, auth)
 	if err != nil {
 		log.Println("Error sending message by SMTP: " + err.Error())

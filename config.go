@@ -76,9 +76,11 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.DeliverScript = stringOrNothing(L.GetGlobal("DeliverScript"))
 	// Sane defaults
 	if C.IMAPPort == -1 {
+		log.Println("Assuming port 143 for IMAPPort config option.")
 		C.IMAPPort = 143
 	}
 	if C.SMTPPort == -1 {
+		log.Println("Assuming port 465 for SMTPPort config option.")
 		C.SMTPPort = 465
 	}
 	C.smtpAddr = C.SMTPHost + ":" + strconv.Itoa(C.SMTPPort)
