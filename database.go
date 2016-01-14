@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
-	"github.com/jordan-wright/email"
 	"github.com/layeh/gopher-luar"
 )
 
@@ -88,30 +87,10 @@ func NewDatabase(loc string, boltconf ...*bolt.Options) (ldb *ListlessDB, err er
 		if _, err := tx.CreateBucketIfNotExists([]byte("members")); err != nil {
 			return err
 		}
-		if _, err := tx.CreateBucketIfNotExists([]byte("archive")); err != nil {
+		if _, err := tx.CreateBucketIfNotExists([]byte("kvstores")); err != nil {
 			return err
 		}
 		return nil
-	})
-}
-
-// StoreEmail - Store a message to the archive *after* processing. Message is
-// stored sequentially, so the archive is chronological.
-func (db *ListlessDB) StoreEmail(e *email.Email) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		archive := tx.Bucket([]byte("archive"))
-		if archive == nil {
-			return ErrArchiveBucketNotFound
-		}
-		key, err := archive.NextSequence()
-		if err != nil {
-			return err
-		}
-		value, err := json.Marshal(e)
-		if err != nil {
-			return err
-		}
-		return archive.Put(itob(int(key)), value)
 	})
 }
 
@@ -197,6 +176,9 @@ func (db *ListlessDB) DelSubscriber(email string) error {
 	})
 }
 
+// TODO: Do away with this "true for moderators" crap and let people iterate in Lua
+// if they want only moderators.
+
 // GetAllSubscribers - This returns a *lua Table* consisting of all subscriber email addresses.
 func (db *ListlessDB) GetAllSubscribers(L *luar.LState) int {
 	mo := false
@@ -245,6 +227,125 @@ func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) 
 		log.Printf("Error in goGetAllSubscribers: %s", err.Error())
 	}
 	return subscribers
+}
+
+// KVStore creates or fetches a key:value bucket in kvbuckets and returns it in Lua.
+func (db *ListlessDB) KVStore(bucketName string) *ListlessKVStore {
+	kv := &ListlessKVStore{
+		parentDB:   db,
+		BucketName: bucketName,
+	}
+	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
+		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket.CreateBucketIfNotExists([]byte(kv.BucketName))
+		return nil
+	})
+	if err != nil {
+		log.Println("Error creating KV store (returning nil): ", err)
+		return nil
+	}
+	return kv
+}
+
+// ListlessKVStore is the Lua representation of a Bolt bucket, and offers easy
+// means to set, get, and delete values in a simple KV store for persistent
+// string:string mappings.
+type ListlessKVStore struct {
+	parentDB   *ListlessDB
+	destroyed  bool
+	BucketName string
+}
+
+// Store a string->string mapping in this kv store. Replaces any prior value.
+func (kv *ListlessKVStore) Store(key, value string) {
+	if kv.destroyed {
+		log.Println("Store operation called on destroyed bucket. Ignoring, but check your code!")
+		return
+	}
+	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
+		kvbucket := tx.Bucket([]byte("kvstores"))
+		bucket := kvbucket.Bucket([]byte(kv.BucketName))
+		return bucket.Put([]byte(key), []byte(value))
+	})
+	if err != nil {
+		log.Println("Error storing value in KV bucket: ", err)
+	}
+}
+
+// Retrieve a string value for a string key. Returns empty string on failure.
+func (kv *ListlessKVStore) Retrieve(key string) string {
+	if kv.destroyed {
+		log.Println("Retrieve operation called on destroyed bucket. Ignoring, but check your code!")
+		return ""
+	}
+	// TODO: Tidy this up for errors where bucket retrieval goes awry..
+	var value string
+	err := kv.parentDB.View(func(tx *bolt.Tx) error {
+		kvbucket := tx.Bucket([]byte("kvstores"))
+		bucket := kvbucket.Bucket([]byte(kv.BucketName))
+		valb := bucket.Get([]byte(key))
+		value = string(valb)
+		return nil
+	})
+	if err != nil {
+		log.Println("Error retrieving key from KV bucket (returning empty string): ", err)
+		return ""
+	}
+	return value
+}
+
+// Delete a value associated with a key in this KV store. No error if absent.
+func (kv *ListlessKVStore) Delete(key string) {
+	if kv.destroyed {
+		log.Println("Delete operation called on destroyed bucket. Ignoring, but check your code!")
+		return
+	}
+	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
+		kvbucket := tx.Bucket([]byte("kvstores"))
+		bucket := kvbucket.Bucket([]byte(kv.BucketName))
+		return bucket.Delete([]byte(key))
+	})
+	if err != nil {
+		log.Println("Error deleting key from KV bucket: ", err)
+	}
+}
+
+// Keys - Return a list-like table of all keys currently in the KV store.
+func (kv *ListlessKVStore) Keys(L *luar.LState) int {
+	var keys []string
+	err := kv.parentDB.View(func(tx *bolt.Tx) error {
+		kvbucket := tx.Bucket([]byte("kvstores"))
+		bucket := kvbucket.Bucket([]byte(kv.BucketName))
+		return bucket.ForEach(func(k, v []byte) error {
+			keys = append(keys, string(k))
+			return nil
+		})
+	})
+	if err != nil {
+		log.Println("Error iterating over keys in a bucket to return key-list: ", err)
+		return 0
+	}
+	T := L.CreateTable(len(keys), 0)
+	for _, k := range keys {
+		// Need to explicitly pass lua.LState rather than luar.LState..
+		T.Append(luar.New(L.LState, k))
+	}
+	L.Push(T)
+	return 1
+}
+
+// Destroy deletes a bucket from the KV store backend, and marks it as destroyed
+// so any methods called on remaining instances of the ListlessKVStore object will
+// fail without corrupting the database.
+func (kv *ListlessKVStore) Destroy() {
+	kv.destroyed = true
+	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
+		kvbucket := tx.Bucket([]byte("kvstores"))
+		return kvbucket.DeleteBucket([]byte(kv.BucketName))
+	})
+	if err != nil {
+		log.Println("Error destroying bucket: ", err)
+	}
 }
 
 // itob returns an 8-byte big endian representation of v.

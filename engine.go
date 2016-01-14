@@ -8,7 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cjoudrey/gluaurl"
 	"github.com/jordan-wright/email"
+	luajson "github.com/layeh/gopher-json"
+	// "github.com/cjoudrey/gluahttp"
 	"github.com/layeh/gopher-luar"
 	"github.com/tgulacsi/imapclient"
 	"github.com/yuin/gopher-lua"
@@ -39,8 +42,12 @@ func NewEngine(cfg *Config) (*Engine, error) {
 	E := new(Engine)
 	E.Config = cfg
 	E.Lua = lua.NewState()
+	// Preload a few extra libs..
+	luajson.Preload(E.Lua)
+	E.Lua.PreloadModule("url", gluaurl.Loader)
+	// Disabled for security, right now:
+	// E.Lua.PreloadModule("http", gluahttp.NewHttpModule(&http.Client{}).Loader)
 	E.DB, err = NewDatabase(cfg.Database)
-	//E.DB, err = bolt.Open(cfg.Database, 0600, nil)
 	if err != nil {
 		return nil, err
 	}
