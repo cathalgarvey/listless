@@ -384,9 +384,3 @@ func (em *Email) Send(addr string, a smtp.Auth, excludeEmails ...string) error {
 	}
 	return smtp.SendMail(addr, a, from.Address, to, raw)
 }
-
-// AttachFile - Would be inherited from email.Email, shadowing to conceal from
-// lua because it could be a security hole.
-func (em *Email) AttachFile(nope string) (no *email.Attachment, not error) {
-	return nil, ErrDisabledForSecurity
-}

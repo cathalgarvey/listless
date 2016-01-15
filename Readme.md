@@ -44,6 +44,7 @@ set right now is:
 
 
 ### Usage / Setup
+
 1. Get or create an email account that supports IMAP/SMTP. I use my shared hosting
    account at [1984hosting.com](https://1984hosting.com), who are awesome by the way.
 2. Create a configuration file like the one in "sample_config.lua" containing your
@@ -53,6 +54,11 @@ set right now is:
    receives as arguments `config, database, message`. The one given in `default_eventloop.lua`
    is a simple members-only mailing list which prepends message subjects with the "SubjectTag"
    string, if given.
+   **Notice: As attractive as the idea may at times appear, do not ever write an eventLoop that
+   executes remote code. Email "from" headers are trivially forged, so anyone will be able to
+   execute code. At present, the lua `io`, `os` and `debug` libraries are all enabled. In addition,
+   the `message` and `database` objects provided to `eventLoop` [have security holes that could
+   be exploited to steal or delete your files, or simply to crash `listless`](https://github.com/cathalgarvey/listless/issues/6). Don't do it!**
 4. Add some subscribers; Right now, this requires executing a lua script
    (via-mail moderator commands are [a planned feature](https://github.com/cathalgarvey/listless/issues/3)!)
     * Create a lua script similar to `sample_setup.lua`; see that file for inline
