@@ -13,8 +13,13 @@ import (
 	"github.com/yuin/gopher-lua"
 )
 
-// ErrEmailUnparseable - Returned when a To/CC/BCC entry can't be parsed into a simple Email address.
-var ErrEmailUnparseable = errors.New("Email appears neither a simple ('foo@bar.com') nor expressive ('Foo Bar <foo@bar.com>') construction")
+var (
+	// ErrEmailUnparseable - Returned when a To/CC/BCC entry can't be parsed into a simple Email address.
+	ErrEmailUnparseable = errors.New("Email appears neither a simple ('foo@bar.com') nor expressive ('Foo Bar <foo@bar.com>') construction")
+	// ErrDisabledForSecurity - Returned by methods on structs that are shadowed
+	// to hide them from luar, so they don't get exposed to Lua layer.
+	ErrDisabledForSecurity = errors.New("This method is disabled for security reasons")
+)
 
 // Email is a derivation of email.Email with a few methods added to play nicely
 // in lua.
@@ -378,4 +383,10 @@ func (em *Email) Send(addr string, a smtp.Auth, excludeEmails ...string) error {
 		return err
 	}
 	return smtp.SendMail(addr, a, from.Address, to, raw)
+}
+
+// AttachFile - Would be inherited from email.Email, shadowing to conceal from
+// lua because it could be a security hole.
+func (em *Email) AttachFile(nope string) (no *email.Attachment, not error) {
+	return nil, ErrDisabledForSecurity
 }
