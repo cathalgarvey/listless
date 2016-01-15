@@ -37,14 +37,16 @@ func WrapEmail(e *email.Email) *Email {
 	return newe
 }
 
-// GetBody returns the message body as a string. Warning: Encoding-naive!
-func (em *Email) GetBody() string {
+// GetBody returns the message Text as a string. Warning: Encoding-naive!
+// This returns the text body, not a HTML body if included in the mail!
+func (em *Email) GetText() string {
 	return string(em.Text)
 }
 
-// SetBody sets the email Body/Text as a given string. This replaces the existing
+// SetBody sets the email Text as a given string. This replaces the existing
 // Body/Text.
-func (em *Email) SetBody(newbody string) {
+// This sets the text body, not HTML!
+func (em *Email) SetText(newtext string) {
 	em.Text = append(em.Text[:0], []byte(newbody)...)
 }
 
