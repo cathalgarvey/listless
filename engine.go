@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -53,6 +54,10 @@ func NewEngine(cfg *Config) (*Engine, error) {
 	}
 	E.Client = imapclient.NewClientTLS(cfg.IMAPHost, cfg.IMAPPort, cfg.IMAPUsername, cfg.IMAPPassword)
 	E.Shutdown = make(chan struct{})
+	err = applyLuarWhitelists(E.Lua)
+	if err != nil {
+		return nil, err
+	}
 	return E, nil
 }
 
@@ -63,6 +68,57 @@ func (eng *Engine) Close() {
 	eng.Lua.Close()
 	eng.DB.Close()
 	eng.Client.Close(true)
+}
+
+// ModeratorSandbox creates a new lua state for executing mod commands. The state
+// is fresh and should be deleted afterwards.
+// ModeratorSandbox can execute an arbitrary lua script in a more tightly constrained
+// execution environment intended to enable subscriber add/remove ops, or bans, or
+// queued messages, etc.
+// Exposes database but with a reduced subset of methods.
+// Exposes a copy of config; changes are not saved.
+func (eng *Engine) ModeratorSandbox() (*lua.LState, error) {
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	for _, opener := range []lua.LGFunction{
+		lua.OpenPackage,
+		lua.OpenBase,
+		lua.OpenString,
+		lua.OpenTable,
+		lua.OpenMath,
+		lua.OpenCoroutine,
+		lua.OpenChannel,
+	} {
+		opener(L)
+	}
+	err := applyLuarWhitelists(L)
+	if err != nil {
+		return nil, err
+	}
+	// Set globals for Moderator. Config is a copy. Database is wrapped in ModeratorDBWrapper.
+	L.SetGlobal("database", luar.New(L, eng.DB.ModeratorDBWrapper()))
+	// Need an authentic copy of the config file guaranteed to have no mutable refs.
+	// Screw manual reflective deep-copying, let's just JSON-cycle this sh*t
+	confJSON, err := json.Marshal(eng.Config)
+	if err != nil {
+		return nil, err
+	}
+	tmpConf := new(Config)
+	err = json.Unmarshal(confJSON, tmpConf)
+	if err != nil {
+		return nil, err
+	}
+	// Globalise
+	L.SetGlobal("config", luar.New(L, tmpConf))
+	return L, nil
+}
+
+// PrivilegedSandbox returns the default sandbox used for executing eventLoop.
+// This sandbox is not much of a box and is not remotely safe to run untrusted
+// code within.
+func (eng *Engine) PrivilegedSandbox() *lua.LState {
+	L := eng.Lua.NewThread()
+	L.OpenLibs() // ALL THE LIBS
+	return L
 }
 
 // ProcessMail takes an email struct, passes is to the Lua script, and applies
@@ -78,12 +134,14 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 	// the parent, nor to push the child thread onto the parent's stack, so I think
 	// when this thread goes out of scope it will be garbage collected without
 	// extra effort.
-	L := eng.Lua.NewThread()
+	L := eng.PrivilegedSandbox()
 	err = L.DoFile(eng.Config.DeliverScript)
 	if err != nil {
 		return false, err
 	}
 	log.Println("Calling `eventLoop` function from Lua")
+	// Database object with whitelisted methods; the whitelist is in NewEngine
+	privDB := luar.New(L, eng.DB.PrivilegedDBWrapper())
 	// Run expected "eventLoop" function with arguments "database", "message".
 	err = L.CallByParam(
 		lua.P{
@@ -92,7 +150,7 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 			Protect: true,
 		},
 		luar.New(L, eng.Config),
-		luar.New(L, eng.DB),
+		privDB,
 		luar.New(L, e))
 	if err != nil {
 		return false, err

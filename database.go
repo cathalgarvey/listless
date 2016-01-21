@@ -4,11 +4,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/layeh/gopher-luar"
+	"github.com/yuin/gopher-lua"
 )
 
 var (
@@ -59,12 +62,11 @@ func (m *MemberMeta) SetJoinDateUTC(year, month, day, hour int) {
 	m.Joindate = time.Date(year, time.Month(month), day, hour, 0, 0, 0, time.UTC)
 }
 
-// ListlessDB - The database object as injected into the Lua eventloop. Thanks
-// to luar, the below methods are available in the Lua runtime, though argument
-// types include a custom struct, MemberMeta, which means modifying member
-// details will likely require creating an empty member with database:AddSubscriber("foo@bar.com", nil),
-// fetching the new entry with `local foometa = database:GetSubscriber("foo@bar.com"), modifying the returned
-// value, and then using database:AddSubscriber("foo@bar.com", foometa) to overwrite.
+// ListlessDB - The database object used by Listless. This wraps boltdb and adds
+// extra methods for handling memberships and K/V bucket datastores.
+// This is never directly injected into Lua, but is further wrapped in either
+// PrivilegedDBWrapper or ModeratorDBWrapper, which have whitelisted methods
+// appropriate to their execution contexts.
 type ListlessDB struct {
 	*bolt.DB
 }
@@ -353,4 +355,86 @@ func itob(v int) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(v))
 	return b
+}
+
+// Create a temporary Boltdb to register whitelisted methods in this Lua state
+// using Luar, then destroy the temporary boltdb once it's finished.
+func applyLuarWhitelists(L *lua.LState) error {
+	dummyf, err := ioutil.TempDir("", "listless")
+	if err != nil {
+		return err
+	}
+	// Destroy temporary directory and contents when finished.
+	defer os.RemoveAll(dummyf)
+	// Make DB in tempdir just to register and get a Metatable from Luar.
+	dummydb, err := NewDatabase(dummyf + "tmpdb.db")
+	if err != nil {
+		return err
+	}
+	// Whitelist Nothing for a bare database!
+	luar.MT(L, dummydb).Whitelist()
+	// Apply levelled whitelists for "Privileged" (full access) and
+	// "Moderator" (limited access) database wrappers.
+	privDBMT := luar.MT(L, dummydb.PrivilegedDBWrapper())
+	privDBMT.Whitelist(PrivilegedDBPermittedMethods...)
+	modrDBMT := luar.MT(L, dummydb.ModeratorDBWrapper())
+	modrDBMT.Whitelist(ModeratorDBPermittedMethods...)
+	// Must also whitelist the Key/Value stores to prevent access to underlying DB.
+	dummykv := dummydb.KVStore("dummy")
+	kvMT := luar.MT(L, dummykv)
+	kvMT.Whitelist(ListlessKVStorePermittedMethods...)
+	return nil
+}
+
+// PrivilegedDBWrapper is a struct embedding ListlessDB which is used in PrivilegedSandbox
+// and has a luar metatable permitting all of the ListlessDB methods, but no boltdb
+// methods.
+type PrivilegedDBWrapper struct {
+	*ListlessDB
+}
+
+// PrivilegedDBWrapper is used when inserting a database into Lua to help luar pick
+// which metatable to attach for security's sake.
+func (db *ListlessDB) PrivilegedDBWrapper() *PrivilegedDBWrapper {
+	ndb := new(PrivilegedDBWrapper)
+	ndb.ListlessDB = db
+	return ndb
+}
+
+// ModeratorDBWrapper is a struct embedding ListlessDB which is used in PrivilegedSandbox
+// and has a luar metatable permitting all of the ListlessDB methods, but no boltdb
+// methods.
+type ModeratorDBWrapper struct {
+	*ListlessDB
+}
+
+// ModeratorDBWrapper is used when inserting a database into Lua to help luar pick
+// which metatable to attach for security's sake.
+func (db *ListlessDB) ModeratorDBWrapper() *ModeratorDBWrapper {
+	ndb := new(ModeratorDBWrapper)
+	ndb.ListlessDB = db
+	return ndb
+}
+
+// PrivilegedDBPermittedMethods is a list of permitted fields/methods on a PrivilegedDBWrapper
+// within Lua.
+var PrivilegedDBPermittedMethods = []string{
+	"IsModerator", "IsAllowedPost",
+	"CreateSubscriber", "UpdateSubscriber", "DelSubscriber",
+	"GetAllSubscribers", "KVStore",
+}
+
+// ModeratorDBPermittedMethods is a list of permitted fields/methods on a ModeratorDBWrapper
+// within Lua.
+var ModeratorDBPermittedMethods = []string{
+	"IsModerator", "IsAllowedPost",
+	"CreateSubscriber", "UpdateSubscriber", "GetSubscriber", "DelSubscriber",
+	// Getting subscriber list is not permitted for Moderators, as they can always
+	// GetSubscriber using a known email address.
+	// Moderators are also not currently given KVStore access.
+}
+
+// ListlessKVStorePermittedMethods - Whitelisted fields/methods for the ListlessKVStore type in luar.
+var ListlessKVStorePermittedMethods = []string{
+	"Store", "Retrieve", "Delete", "Keys", "Destroy", "BucketName",
 }
