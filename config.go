@@ -1,9 +1,10 @@
 package main
 
 import (
-	"log"
+	"encoding/json"
 	"strconv"
 
+	"github.com/azer/logger"
 	"github.com/yuin/gopher-lua"
 )
 
@@ -27,6 +28,17 @@ type Config struct {
 	MessageFrequency int
 	PollFrequency    int // Seconds
 	Constants        map[string]string
+}
+
+func (C *Config) logAttrs() *logger.Attrs {
+	a := new(logger.Attrs)
+	cJ, err := json.Marshal(C)
+	if err != nil {
+		return nil
+	}
+	// TODO: Does this work?
+	err = json.Unmarshal(cJ, a)
+	return a
 }
 
 // Returns "" if failed to parse.
@@ -81,7 +93,7 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.smtpAddr = C.SMTPHost + ":" + strconv.Itoa(C.SMTPPort)
 	if C.ListAddress == "" {
 		C.ListAddress = C.SMTPUsername + "@" + C.SMTPHost
-		log.Println("Setting 'ListAddress' configuration option to " + C.ListAddress + " as this field is required and must be reasonably unique. Set manually if incorrect.")
+		llLog.Info("Setting 'ListAddress' configuration option to " + C.ListAddress + " as this field is required and must be reasonably unique. Set manually if incorrect.")
 	}
 	C.Constants = make(map[string]string)
 	if constantsTable, ok := L.GetGlobal("Constants").(*lua.LTable); ok {
@@ -89,6 +101,6 @@ func ConfigFromState(L *lua.LState) *Config {
 			C.Constants[key.String()] = val.String()
 		})
 	}
-	log.Println("SMTP Address: " + C.smtpAddr)
+	llLog.Info("SMTP Address: " + C.smtpAddr)
 	return C
 }

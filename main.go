@@ -1,12 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"log"
 	"os"
 
 	"github.com/alecthomas/kingpin"
+	"github.com/azer/logger"
 	"github.com/yuin/gopher-lua"
 )
 
@@ -20,9 +20,20 @@ var (
 	execMode       = app.Command("exec", "Execute a lua script in the context of a (separate) lua configuration file.")
 	execConfigfile = execMode.Arg("configfile", "Location of config file.").Required().String()
 	execScript     = execMode.Arg("script", "Location of lua script to execute.").Required().String()
+
+	// Logger for the Lua EventLoop.
+	luaLog = logger.New("lua-eventLoop")
+	// Logger for Database operations.
+	dbLog = logger.New("database")
+	// Logger for Setup/Teardown
+	llLog = logger.New("listless")
+	// Loggers for IMAP/SMTP errors
+	imapLog = logger.New("imap")
+	smtpLog = logger.New("smtp")
 )
 
 func main() {
+	llLog.Info("Welcome to Listless!")
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case loopMode.FullCommand():
 		{
@@ -40,45 +51,56 @@ func main() {
 }
 
 func loopModeF() {
-	log.Println("Starting Listless in loop mode. Hello!")
+	llLog.Info("Starting in loop mode.")
 	config := loadSettings(*loopConfigfile)
-	log.Println("Loading engine..")
+	llLog.Info("Loading Engine..")
 	engine, err := NewEngine(config)
 	if err != nil {
+		llLog.Error("Failed to load Engine: %s", err.Error())
 		log.Fatal(err)
 	}
-	log.Println("Starting event loop.")
+	llLog.Info("Starting event loop.")
 	// Setup main loop, run forevs.
 	engine.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
 	//imapclient.DeliveryLoop(engine.Client, "INBOX", "", engine.Handler, "", "", engine.Shutdown)
-	log.Println("Exited DeliveryLoop successfully, shutting down.")
+	llLog.Info("Exited DeliveryLoop successfully, shutting down.")
 }
 
 func execModeF() {
-	log.Println("Starting Listless in exec mode. Hello!")
+	llLog.Info("Starting in exec mode.")
 	config := loadSettings(*execConfigfile)
-	log.Println("Loading engine..")
+	llLog.Info("Loading Engine..")
 	engine, err := NewEngine(config)
 	if err != nil {
+		llLog.Error("Failed to load Engine: %s", err.Error())
 		log.Fatal(err)
 	}
 	// Now execute the provided exec script once in the Engine, and quit.
+	llLog.Info("Loading script for execution: %s", *execScript)
 	scriptb, err := ioutil.ReadFile(*execScript)
 	if err != nil {
+		llLog.Error("Failed to load script: %s", err.Error())
 		log.Fatal(err)
 	}
+	llLog.Info("Executing script")
 	err = engine.ExecOnce(string(scriptb))
 	if err != nil {
+		llLog.Error("Failed to execute script: %s", err.Error())
 		log.Fatal(err)
 	}
 }
 
 func loadSettings(configFile string) *Config {
-	log.Println("Reading configuration file: " + configFile)
+	llLog.Info("Reading configuration file: %s", configFile)
 	configL := lua.NewState()
 	configL.DoFile(configFile)
 	config := ConfigFromState(configL)
-	conf, _ := json.Marshal(config)
-	log.Println("Got config file, parsed into settings: " + string(conf))
+	//conf, _ := json.Marshal(config)
+	confLoggable := config.logAttrs()
+	if confLoggable == nil {
+		llLog.Error("Tried to log configuration file but failed to create loggable representation. This is probably not a fatal error.")
+	} else {
+		llLog.Info("Got config file, parsed into settings:", *confLoggable)
+	}
 	return config
 }

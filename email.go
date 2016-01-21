@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"log"
 	"net/mail"
 	"net/smtp"
 	"strings"
@@ -240,11 +239,11 @@ func (em *Email) normaliseEmailSlice(field string, emailSlice []string) []string
 		for _, e := range multiEntries {
 			e, err := parseExpressiveEmail(e)
 			if err != nil {
-				log.Println("Error parsing address from '" + field + "' email recipient: " + e)
+				imapLog.Error("Error parsing address from '" + field + "' email recipient: " + e)
 				continue
 			}
 			if _, ok := em.inRecipientLists[e]; ok {
-				log.Println("Skipping recipient as it's already been seen: " + e)
+				imapLog.Error("Skipping recipient as it's already been seen: " + e)
 				continue
 			} else {
 				em.inRecipientLists[e] = struct{}{}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
-	"log"
 	"os"
 	"time"
 
@@ -226,7 +225,7 @@ func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) 
 		})
 	})
 	if err != nil {
-		log.Printf("Error in goGetAllSubscribers: %s", err.Error())
+		dbLog.Error("Error in goGetAllSubscribers: %s", err.Error())
 	}
 	return subscribers
 }
@@ -243,7 +242,7 @@ func (db *ListlessDB) KVStore(bucketName string) *ListlessKVStore {
 		return nil
 	})
 	if err != nil {
-		log.Println("Error creating KV store (returning nil): ", err)
+		dbLog.Error("Error creating KV store (returning nil): %s", err.Error())
 		return nil
 	}
 	return kv
@@ -261,7 +260,7 @@ type ListlessKVStore struct {
 // Store a string->string mapping in this kv store. Replaces any prior value.
 func (kv *ListlessKVStore) Store(key, value string) {
 	if kv.destroyed {
-		log.Println("Store operation called on destroyed bucket. Ignoring, but check your code!")
+		luaLog.Error("Store operation called on destroyed bucket: %s", kv.BucketName)
 		return
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
@@ -270,14 +269,14 @@ func (kv *ListlessKVStore) Store(key, value string) {
 		return bucket.Put([]byte(key), []byte(value))
 	})
 	if err != nil {
-		log.Println("Error storing value in KV bucket: ", err)
+		dbLog.Error("Error storing value in KV bucket: %s", err.Error())
 	}
 }
 
 // Retrieve a string value for a string key. Returns empty string on failure.
 func (kv *ListlessKVStore) Retrieve(key string) string {
 	if kv.destroyed {
-		log.Println("Retrieve operation called on destroyed bucket. Ignoring, but check your code!")
+		luaLog.Error("Retrieve operation called on destroyed bucket: %s", kv.BucketName)
 		return ""
 	}
 	// TODO: Tidy this up for errors where bucket retrieval goes awry..
@@ -290,7 +289,7 @@ func (kv *ListlessKVStore) Retrieve(key string) string {
 		return nil
 	})
 	if err != nil {
-		log.Println("Error retrieving key from KV bucket (returning empty string): ", err)
+		dbLog.Error("Error retrieving key from KV bucket (returning empty string): %s", err.Error())
 		return ""
 	}
 	return value
@@ -299,7 +298,7 @@ func (kv *ListlessKVStore) Retrieve(key string) string {
 // Delete a value associated with a key in this KV store. No error if absent.
 func (kv *ListlessKVStore) Delete(key string) {
 	if kv.destroyed {
-		log.Println("Delete operation called on destroyed bucket. Ignoring, but check your code!")
+		luaLog.Error("Delete operation called on destroyed bucket: %s", kv.BucketName)
 		return
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
@@ -308,7 +307,7 @@ func (kv *ListlessKVStore) Delete(key string) {
 		return bucket.Delete([]byte(key))
 	})
 	if err != nil {
-		log.Println("Error deleting key from KV bucket: ", err)
+		dbLog.Error("Error deleting key from KV bucket: %s", err.Error())
 	}
 }
 
@@ -324,7 +323,7 @@ func (kv *ListlessKVStore) Keys(L *luar.LState) int {
 		})
 	})
 	if err != nil {
-		log.Println("Error iterating over keys in a bucket to return key-list: ", err)
+		dbLog.Error("Error iterating over keys in a bucket to return key-list: %s", err.Error())
 		return 0
 	}
 	T := L.CreateTable(len(keys), 0)
@@ -346,7 +345,7 @@ func (kv *ListlessKVStore) Destroy() {
 		return kvbucket.DeleteBucket([]byte(kv.BucketName))
 	})
 	if err != nil {
-		log.Println("Error destroying bucket: ", err)
+		dbLog.Error("Error destroying bucket: %s", err.Error())
 	}
 }
 
