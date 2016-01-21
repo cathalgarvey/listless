@@ -41,7 +41,7 @@ set right now is:
   local modifications by script. Want to load in a huge CSV of subscribers? Just
   write or borrow a lua script for that. Want to fetch new subscribers from a HTTP
   resource? Shell out to wget.
-
+* Pretty-ish logging with categorisation (incomplete, set `LOG` environment variable to `*` to enable, like `LOG=* listless my_conf.lua`)
 
 ### Usage / Setup
 
@@ -53,31 +53,22 @@ set right now is:
 3. Create or copy/modify a lua script containing a function named `eventLoop` which
    receives as arguments `config, database, message`. The one given in `default_eventloop.lua`
    is a simple members-only mailing list which prepends message subjects with the "SubjectTag"
-   string, if given.
+   string, if given. Reference this eventLoop script in your Configuration file.
    **Notice: As attractive as the idea may at times appear, do not ever write an eventLoop that
    executes remote code. Email "from" headers are trivially forged, so anyone will be able to
-   execute code. At present, the lua `io`, `os` and `debug` libraries are all enabled. In addition,
-   the `message` and `database` objects provided to `eventLoop` [have security holes that could
-   be exploited to steal or delete your files, or simply to crash `listless`](https://github.com/cathalgarvey/listless/issues/6). Don't do it!**
+   execute code. At present, the lua `io`, `os` and `debug` libraries are all enabled.. Don't do it!**
 4. Add some subscribers; Right now, this requires executing a lua script
    (via-mail moderator commands are [a planned feature](https://github.com/cathalgarvey/listless/issues/3)!)
     * Create a lua script similar to `sample_setup.lua`; see that file for inline
       documentation of how to use the database object to create and add subscribers.
     * Execute your file in the context of the configuration file: `./listless my_config.lua my_setup.lua`
 5. Initiate the DeliveryLoop, which will iterate through incoming mail and execute `eventLoop`
-   for each incoming email.
+   for each incoming email: `listless loop my_config.lua` (Or, if you want logs: `LOG=* loop my_config.lua`)
 6. Try sending some email!
 
 ### Desired / Planned Features
 * Real documentation of the Lua API.
-* Archival storage of list traffic in a local database. Database methods exist
-  to implement this, but at present this is dumb storage, however. Maybe ditch
-  this in favour of exposing Key/Value databasing to Lua and leaving eventLoop
-  authors decide whether to store mail.
 * Limited, somewhat more secure Lua scripting over email by moderators. See [relevant issue for thoughts on "console threads" idea.](https://github.com/cathalgarvey/listless/issues/3)
-* Key/Value store API in Lua, so eventLoops can store state/data/records. This could
-  even then replace a hardcoded list archive function and leave that to Lua.
-  [See relevant issue](https://github.com/cathalgarvey/listless/issues/4).
 * More granular access control API added to the Lua runtime for the event loop, so
   that less freeform lists can be hacked up easily.
 * Search functions for the archive.
