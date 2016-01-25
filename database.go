@@ -12,12 +12,13 @@ import (
 )
 
 var (
-
 	// ErrMemberBucketNotFound - Returned when a database lookup fails at the bucket level.
 	ErrMemberBucketNotFound = errors.New("Member bucket not found")
 
 	// ErrArchiveBucketNotFound - Returned when a database lookup fails at the bucket level.
 	ErrArchiveBucketNotFound = errors.New("Archive bucket not found")
+
+	bucketList = []string{"members", "kvstores", "transactions"}
 )
 
 // ListlessDB - The database object used by Listless. This wraps boltdb and adds
@@ -44,11 +45,10 @@ func NewDatabase(loc string, boltconf ...*bolt.Options) (ldb *ListlessDB, err er
 	// Configure database buckets.
 	ldb.DB = db
 	return ldb, db.Update(func(tx *bolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte("members")); err != nil {
-			return err
-		}
-		if _, err := tx.CreateBucketIfNotExists([]byte("kvstores")); err != nil {
-			return err
+		for _, bucketName := range bucketList {
+			if _, err := tx.CreateBucketIfNotExists([]byte(bucketName)); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
