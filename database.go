@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -52,13 +51,6 @@ func NewDatabase(loc string, boltconf ...*bolt.Options) (ldb *ListlessDB, err er
 		}
 		return nil
 	})
-}
-
-// itob returns an 8-byte big endian representation of v.
-func itob(v int) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(v))
-	return b
 }
 
 // Create a temporary Boltdb to register whitelisted methods in this Lua state
