@@ -21,7 +21,7 @@ func (db *ListlessDB) KVStore(bucketName string) *ListlessKVStore {
 		BucketName: bucketName,
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
-		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket := tx.Bucket([]byte(kvBucketName))
 		kvbucket.CreateBucketIfNotExists([]byte(kv.BucketName))
 		return nil
 	})
@@ -39,7 +39,7 @@ func (kv *ListlessKVStore) Store(key, value string) {
 		return
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
-		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket := tx.Bucket([]byte(kvBucketName))
 		bucket := kvbucket.Bucket([]byte(kv.BucketName))
 		return bucket.Put([]byte(key), []byte(value))
 	})
@@ -57,7 +57,7 @@ func (kv *ListlessKVStore) Retrieve(key string) string {
 	// TODO: Tidy this up for errors where bucket retrieval goes awry..
 	var value string
 	err := kv.parentDB.View(func(tx *bolt.Tx) error {
-		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket := tx.Bucket([]byte(kvBucketName))
 		bucket := kvbucket.Bucket([]byte(kv.BucketName))
 		valb := bucket.Get([]byte(key))
 		value = string(valb)
@@ -77,7 +77,7 @@ func (kv *ListlessKVStore) Delete(key string) {
 		return
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
-		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket := tx.Bucket([]byte(kvBucketName))
 		bucket := kvbucket.Bucket([]byte(kv.BucketName))
 		return bucket.Delete([]byte(key))
 	})
@@ -90,7 +90,7 @@ func (kv *ListlessKVStore) Delete(key string) {
 func (kv *ListlessKVStore) Keys(L *luar.LState) int {
 	var keys []string
 	err := kv.parentDB.View(func(tx *bolt.Tx) error {
-		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket := tx.Bucket([]byte(kvBucketName))
 		bucket := kvbucket.Bucket([]byte(kv.BucketName))
 		return bucket.ForEach(func(k, v []byte) error {
 			keys = append(keys, string(k))
@@ -116,7 +116,7 @@ func (kv *ListlessKVStore) Keys(L *luar.LState) int {
 func (kv *ListlessKVStore) Destroy() {
 	kv.destroyed = true
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
-		kvbucket := tx.Bucket([]byte("kvstores"))
+		kvbucket := tx.Bucket([]byte(kvBucketName))
 		return kvbucket.DeleteBucket([]byte(kv.BucketName))
 	})
 	if err != nil {

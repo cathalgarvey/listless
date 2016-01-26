@@ -81,7 +81,7 @@ func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
 	}
 	sub := MemberMeta{}
 	err := db.View(func(tx *bolt.Tx) error {
-		members := tx.Bucket([]byte("members"))
+		members := tx.Bucket([]byte(memberBucketName))
 		if members == nil {
 			return ErrMemberBucketNotFound
 		}
@@ -106,7 +106,7 @@ func (db *ListlessDB) UpdateSubscriber(usremail string, meta *MemberMeta) error 
 		return ErrInvalidEmail
 	}
 	return db.Update(func(tx *bolt.Tx) error {
-		members := tx.Bucket([]byte("members"))
+		members := tx.Bucket([]byte(memberBucketName))
 		if members == nil {
 			return ErrMemberBucketNotFound
 		}
@@ -125,7 +125,7 @@ func (db *ListlessDB) DelSubscriber(email string) error {
 		return ErrInvalidEmail
 	}
 	return db.Update(func(tx *bolt.Tx) error {
-		members := tx.Bucket([]byte("members"))
+		members := tx.Bucket([]byte(memberBucketName))
 		if members == nil {
 			return ErrMemberBucketNotFound
 		}
@@ -166,7 +166,7 @@ func (db *ListlessDB) GetAllSubscribers(L *luar.LState) int {
 func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) {
 	subscribers = make([]string, 0)
 	err := db.View(func(tx *bolt.Tx) error {
-		members := tx.Bucket([]byte("members"))
+		members := tx.Bucket([]byte(memberBucketName))
 		return members.ForEach(func(email, metabytes []byte) error {
 			meta := MemberMeta{}
 			err := json.Unmarshal(metabytes, &meta)

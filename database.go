@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"path"
 
 	"github.com/boltdb/bolt"
 	"github.com/layeh/gopher-luar"
@@ -17,7 +18,10 @@ var (
 	// ErrArchiveBucketNotFound - Returned when a database lookup fails at the bucket level.
 	ErrArchiveBucketNotFound = errors.New("Archive bucket not found")
 
-	bucketList = []string{"members", "kvstores", "transactions"}
+	memberBucketName      = "members"
+	kvBucketName          = "kvstores"
+	transactionBucketName = "transactions"
+	bucketList            = []string{memberBucketName, kvBucketName, transactionBucketName}
 )
 
 // ListlessDB - The database object used by Listless. This wraps boltdb and adds
@@ -63,7 +67,7 @@ func applyLuarWhitelists(L *lua.LState) error {
 	// Destroy temporary directory and contents when finished.
 	defer os.RemoveAll(dummyf)
 	// Make DB in tempdir just to register and get a Metatable from Luar.
-	dummydb, err := NewDatabase(dummyf + "tmpdb.db")
+	dummydb, err := NewDatabase(path.Join(dummyf, "tmpdb.db"))
 	if err != nil {
 		return err
 	}
