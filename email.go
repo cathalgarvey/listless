@@ -30,6 +30,16 @@ type Email struct {
 	Sender           string
 }
 
+// EmailPermittedMethods are the struct fields and methods that are permitted
+// within Lua. Everything else is blacklisted, to ensure that methods that present
+// security risks are never permitted in Lua, such as: https://godoc.org/github.com/jordan-wright/email#Email.AttachFile
+var EmailPermittedMethods = []string{
+	"From", "To", "Bcc", "Cc", "Subject", "Text", "HTML", "Headers", "Attachments", "ReadReceipt",
+	"GetText", "SetText", "GetHeader", "SetHeader", "AddHeader", "DelHeader",
+	"AddToRecipient", "AddCcRecipient", "AddBccRecipient", "AddRecipient", "AddRecipientList",
+	"ClearRecipients", "RemoveRecipient",
+}
+
 // WrapEmail - given an email.Email object, return the wrapper used in this
 // package to provide Lua scripting conveniences.
 func WrapEmail(e *email.Email) *Email {

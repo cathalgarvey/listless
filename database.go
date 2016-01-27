@@ -60,6 +60,10 @@ func NewDatabase(loc string, boltconf ...*bolt.Options) (ldb *ListlessDB, err er
 // Create a temporary Boltdb to register whitelisted methods in this Lua state
 // using Luar, then destroy the temporary boltdb once it's finished.
 func applyLuarWhitelists(L *lua.LState) error {
+	// Mail Objects:
+	emailMT := luar.MT(L, Email{})
+	emailMT.Whitelist(EmailPermittedMethods...)
+	// Database Items:
 	dummyf, err := ioutil.TempDir("", "listless")
 	if err != nil {
 		return err
@@ -122,6 +126,7 @@ var PrivilegedDBPermittedMethods = []string{
 	"IsModerator", "IsAllowedPost",
 	"CreateSubscriber", "UpdateSubscriber", "DelSubscriber",
 	"GetAllSubscribers", "KVStore",
+	"RegisterTransaction", "HasTransaction", "TriggerTransaction",
 }
 
 // ModeratorDBPermittedMethods is a list of permitted fields/methods on a ModeratorDBWrapper
@@ -132,6 +137,7 @@ var ModeratorDBPermittedMethods = []string{
 	// Getting subscriber list is not permitted for Moderators, as they can always
 	// GetSubscriber using a known email address.
 	// Moderators are also not currently given KVStore access.
+	"RegisterTransaction", "HasTransaction", "TriggerTransaction",
 }
 
 // ListlessKVStorePermittedMethods - Whitelisted fields/methods for the ListlessKVStore type in luar.

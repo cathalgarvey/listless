@@ -25,20 +25,15 @@ var (
 //  addresses from which a call will be trusted, and a reference code that may be
 //  used to represent a "KV" bucket key (the bucket itself is assumed to be implied
 //  by the operation).
+// MailTransaction is not directly exposed to Lua. A mailtransaction can be created from Lua and
+//  triggered from Lua, but all trigger information must be within the ScriptName, ScriptHook and RefCode
+//  parameters.
 type MailTransaction struct {
-	// Emails that are permitted to trigger this tranaction. If empty, anyone can.
-	Permitted []string
-	// Can this transaction be triggered more than once?
-	Persists bool
 	// Refcode is a string value that can be set and stored by the
 	// initiating script for this transaction. It is intended to be used
 	// as a bucket key for whatever bucket the transaction script uses.
 	// It can, however, be whatever the script likes including JSON.
 	RefCode string
-	// When this job expires, and can be deleted by the calling script.
-	// A function is provided in Lua scope to fetch all refcodes for expired
-	// transactions, so that implementing scripts can clean up their buckets.
-	Expires time.Time
 	// The name of the script to call with this transaction when invoked.
 	ScriptName string
 	// The name of the hook function in the script to call when this is invoked.
@@ -49,6 +44,14 @@ type MailTransaction struct {
 	// which behave identically except their hooks have different names in the same
 	// script; one adds a subscriber, one removes the subscriber.
 	ScriptHook string
+	// Emails that are permitted to trigger this tranaction. If empty, anyone can.
+	Permitted []string
+	// When this job expires, and can be deleted by the calling script.
+	// A function is provided in Lua scope to fetch all refcodes for expired
+	// transactions, so that implementing scripts can clean up their buckets.
+	Expires time.Time
+	// Can this transaction be triggered more than once?
+	Persists bool
 }
 
 // Validate a MailTransaction as having the required fields before database insertion.,
@@ -69,27 +72,22 @@ func (trans *MailTransaction) prepare() error {
 // Validate makes the various checks that a transaction is permissible:
 // * Email is one of the values in "Permitted" (after normalisation)
 // * Expires is not yet past
-// (It is assumed by now that secret value has been checked because it's
-// supposed to be required to find transactions)
+// NB: Secret may be part of overall authentication but it's not visible to MailTransaction structs
+// and is presumed checked already by the time one is fetched.
 func (trans *MailTransaction) Validate(email *Email) bool {
-	if trans.isExpired() {
-		return false
-	}
-	if trans.isPermitted(email.Sender) {
-		return true
-	}
-	return false
+	return trans.isPermitted(email.Sender) && (!trans.isExpired())
 }
 
+// Check if the transaction expiry time is after now.
 func (trans *MailTransaction) isExpired() bool {
 	return time.Now().After(trans.Expires)
 }
 
 // Is sender email address permitted to trigger this Transaction
-func (trans *MailTransaction) isPermitted(email string) bool {
-	email = normaliseEmail(email)
+func (trans *MailTransaction) isPermitted(emailAddr string) bool {
+	emailAddr = normaliseEmail(emailAddr)
 	for _, pEmail := range trans.Permitted {
-		if email == pEmail {
+		if emailAddr == pEmail {
 			return true
 		}
 	}
@@ -135,6 +133,40 @@ func (db *ListlessDB) PutTransaction(secret string, newTransaction *MailTransact
 		transBucket := tx.Bucket([]byte(transactionBucketName))
 		return transBucket.Put(sHash, jTransaction)
 	})
+}
+
+// RegisterTransaction is exposed in Lua. It is how new transactions are created and stored.
+func (db *ListlessDB) RegisterTransaction(secret, scriptname, scripthook, refcode string, permitted []string, validhours int, persists bool) error {
+	newTransaction := MailTransaction{
+		ScriptName: scriptname,
+		ScriptHook: scripthook,
+		RefCode:    refcode,
+		Permitted:  permitted,
+		Expires:    time.Now().Add(time.Duration(validhours) * time.Hour),
+		Persists:   persists,
+	}
+	return db.PutTransaction(secret, &newTransaction)
+}
+
+// HasTransaction is exposed in Lua. It accepts a secret value and returns true if it exists, but does
+// not trigger it.
+func (db *ListlessDB) HasTransaction(secret string) bool {
+	return false
+}
+
+// TriggerTransaction is exposed in Lua. It is how new transactions are searched for and triggered.
+// This is a simultaneous check-and-trigger; for a check only use HasTransaction.
+// This calls the Transaction's script and hook with the database, the email struct, and the refcode.
+// The hook may return an abitrary string which is returned to Lua, and an arbitrary string which is
+// converted to an error on the way out of TriggerTransaction. In turn, the triggering script will
+// receive (hookReturnedString, transactionRefcode, error), all strings or nil.
+func (db *ListlessDB) TriggerTransaction(secret string, email *Email) (hookreturnvalue, refcode string, err error) {
+	// Get transaction
+	// Validate transaction
+	// Trigger transaction
+	// If transaction is expired, delete transaction
+	// Return refcode so script can clean up
+	return hookreturnvalue, refcode, nil
 }
 
 // sha256 the secret to get the hash. May change in future to some other function;
