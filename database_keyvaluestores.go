@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/boltdb/bolt"
 	"github.com/layeh/gopher-luar"
+	"gopkg.in/inconshreveable/log15.v2"
 )
 
 // ListlessKVStore is the Lua representation of a Bolt bucket, and offers easy
@@ -26,7 +27,7 @@ func (db *ListlessDB) KVStore(bucketName string) *ListlessKVStore {
 		return nil
 	})
 	if err != nil {
-		dbLog.Error("Error creating KV store (returning nil): %s", err.Error())
+		log15.Error("Error creating KV store (returning nil)", log15.Ctx{"context": "db", "error": err})
 		return nil
 	}
 	return kv
@@ -35,7 +36,7 @@ func (db *ListlessDB) KVStore(bucketName string) *ListlessKVStore {
 // Store a string->string mapping in this kv store. Replaces any prior value.
 func (kv *ListlessKVStore) Store(key, value string) {
 	if kv.destroyed {
-		luaLog.Error("Store operation called on destroyed bucket: %s", kv.BucketName)
+		log15.Error("Store operation called on destroyed bucket", log15.Ctx{"context": "lua", "bucket": kv.BucketName})
 		return
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
@@ -44,14 +45,14 @@ func (kv *ListlessKVStore) Store(key, value string) {
 		return bucket.Put([]byte(key), []byte(value))
 	})
 	if err != nil {
-		dbLog.Error("Error storing value in KV bucket: %s", err.Error())
+		log15.Error("Error storing value in KV bucket", log15.Ctx{"context": "db", "error": err})
 	}
 }
 
 // Retrieve a string value for a string key. Returns empty string on failure.
 func (kv *ListlessKVStore) Retrieve(key string) string {
 	if kv.destroyed {
-		luaLog.Error("Retrieve operation called on destroyed bucket: %s", kv.BucketName)
+		log15.Error("Retrieve operation called on destroyed bucket", log15.Ctx{"context": "db", "bucket": kv.BucketName})
 		return ""
 	}
 	// TODO: Tidy this up for errors where bucket retrieval goes awry..
@@ -64,7 +65,7 @@ func (kv *ListlessKVStore) Retrieve(key string) string {
 		return nil
 	})
 	if err != nil {
-		dbLog.Error("Error retrieving key from KV bucket (returning empty string): %s", err.Error())
+		log15.Error("Error retrieving key from KV bucket (returning empty string)", log15.Ctx{"context": "db", "error": err})
 		return ""
 	}
 	return value
@@ -73,7 +74,7 @@ func (kv *ListlessKVStore) Retrieve(key string) string {
 // Delete a value associated with a key in this KV store. No error if absent.
 func (kv *ListlessKVStore) Delete(key string) {
 	if kv.destroyed {
-		luaLog.Error("Delete operation called on destroyed bucket: %s", kv.BucketName)
+		log15.Error("Delete operation called on destroyed bucket", log15.Ctx{"context": "db", "bucket": kv.BucketName})
 		return
 	}
 	err := kv.parentDB.Update(func(tx *bolt.Tx) error {
@@ -82,7 +83,7 @@ func (kv *ListlessKVStore) Delete(key string) {
 		return bucket.Delete([]byte(key))
 	})
 	if err != nil {
-		dbLog.Error("Error deleting key from KV bucket: %s", err.Error())
+		log15.Error("Error deleting key from KV bucket", log15.Ctx{"context": "db", "error": err})
 	}
 }
 
@@ -98,7 +99,7 @@ func (kv *ListlessKVStore) Keys(L *luar.LState) int {
 		})
 	})
 	if err != nil {
-		dbLog.Error("Error iterating over keys in a bucket to return key-list: %s", err.Error())
+		log15.Error("Error iterating over keys in a bucket to return key-list", log15.Ctx{"context": "db", "error": err})
 		return 0
 	}
 	T := L.CreateTable(len(keys), 0)
@@ -120,6 +121,6 @@ func (kv *ListlessKVStore) Destroy() {
 		return kvbucket.DeleteBucket([]byte(kv.BucketName))
 	})
 	if err != nil {
-		dbLog.Error("Error destroying bucket: %s", err.Error())
+		log15.Error("Error destroying bucket", log15.Ctx{"context": "db", "error": err})
 	}
 }

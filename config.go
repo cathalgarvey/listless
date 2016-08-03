@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"strconv"
 
-	"github.com/azer/logger"
+	"gopkg.in/inconshreveable/log15.v2"
+
 	"github.com/yuin/gopher-lua"
 )
 
@@ -28,17 +28,6 @@ type Config struct {
 	MessageFrequency int
 	PollFrequency    int // Seconds
 	Constants        map[string]string
-}
-
-func (C *Config) logAttrs() *logger.Attrs {
-	a := new(logger.Attrs)
-	cJ, err := json.Marshal(C)
-	if err != nil {
-		return nil
-	}
-	// TODO: Does this work?
-	err = json.Unmarshal(cJ, a)
-	return a
 }
 
 // Returns "" if failed to parse.
@@ -93,7 +82,7 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.smtpAddr = C.SMTPHost + ":" + strconv.Itoa(C.SMTPPort)
 	if C.ListAddress == "" {
 		C.ListAddress = C.SMTPUsername + "@" + C.SMTPHost
-		llLog.Info("Setting 'ListAddress' configuration option to " + C.ListAddress + " as this field is required and must be reasonably unique. Set manually if incorrect.")
+		log15.Info("Creating a uniquey 'ListAddress' config option as none was provided manually", log15.Ctx{"context": "setup", "ListAddress": C.ListAddress})
 	}
 	C.Constants = make(map[string]string)
 	if constantsTable, ok := L.GetGlobal("Constants").(*lua.LTable); ok {
@@ -101,6 +90,6 @@ func ConfigFromState(L *lua.LState) *Config {
 			C.Constants[key.String()] = val.String()
 		})
 	}
-	llLog.Info("SMTP Address: " + C.smtpAddr)
+	log15.Info("SMTP Address..", log15.Ctx{"context": "setup", "SMTP Address": C.smtpAddr})
 	return C
 }

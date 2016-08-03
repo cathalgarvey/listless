@@ -6,6 +6,8 @@ import (
 	"net/smtp"
 	"strings"
 
+	"gopkg.in/inconshreveable/log15.v2"
+
 	"github.com/dchest/validator"
 	"github.com/jordan-wright/email"
 	"github.com/layeh/gopher-luar"
@@ -249,11 +251,11 @@ func (em *Email) normaliseEmailSlice(field string, emailSlice []string) []string
 		for _, e := range multiEntries {
 			e, err := parseExpressiveEmail(e)
 			if err != nil {
-				imapLog.Error("Error parsing address from '" + field + "' email recipient: " + e)
+				log15.Error("Error parsing address from field", log15.Ctx{"context": "imap", "error": err, "entry": e, "field": field})
 				continue
 			}
 			if _, ok := em.inRecipientLists[e]; ok {
-				imapLog.Error("Skipping recipient as it's already been seen: " + e)
+				log15.Error("Skipping recipient as it's already been seen", log15.Ctx{"context": "imap", "entry": e})
 				continue
 			} else {
 				em.inRecipientLists[e] = struct{}{}

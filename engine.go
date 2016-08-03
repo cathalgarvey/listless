@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/smtp"
 	"strings"
 	"time"
+
+	"gopkg.in/inconshreveable/log15.v2"
 
 	"github.com/cjoudrey/gluaurl"
 	"github.com/jordan-wright/email"
@@ -55,7 +58,7 @@ func NewEngine(cfg *Config) (*Engine, error) {
 	E.Shutdown = make(chan struct{})
 	err = applyLuarWhitelists(E.Lua)
 	if err != nil {
-		luaLog.Error("Error setting method whitelists in lua runtime: %s", err.Error())
+		log15.Error("Error setting method whitelists in lua runtime", log15.Ctx{"context": "lua", "error": err})
 		return nil, err
 	}
 	return E, nil
@@ -63,7 +66,7 @@ func NewEngine(cfg *Config) (*Engine, error) {
 
 // Close all open database, scripting engine and IMAP connections.
 func (eng *Engine) Close() {
-	llLog.Info("Shutting down..")
+	log15.Info("Shutting down..", log15.Ctx{"context": "teardown"})
 	close(eng.Shutdown)
 	eng.Lua.Close()
 	eng.DB.Close()
@@ -92,7 +95,7 @@ func (eng *Engine) ModeratorSandbox() (*lua.LState, error) {
 	}
 	err := applyLuarWhitelists(L)
 	if err != nil {
-		luaLog.Error("Error setting method whitelists in lua runtime: %s", err.Error())
+		log15.Error("Error setting method whitelists in lua runtime", log15.Ctx{"context": "lua", "error": err})
 		return nil, err
 	}
 	// Set globals for Moderator. Config is a copy. Database is wrapped in ModeratorDBWrapper.
@@ -125,10 +128,10 @@ func (eng *Engine) PrivilegedSandbox() *lua.LState {
 // ProcessMail takes an email struct, passes is to the Lua script, and applies
 // any edits *in place* on the email.
 func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
-	imapLog.Info("Received email: " + e.Subject)
-	imapLog.Info("Normalising recipient lists..")
+	log15.Info("Received email", log15.Ctx{"context": "imap", "subject": e.Subject})
+	log15.Info("Normalising recipient lists", log15.Ctx{"context": "imap"})
 	e.NormaliseRecipients()
-	luaLog.Info("Loading user eventLoop script..")
+	log15.Info("Loading user eventLoop script..", log15.Ctx{"context": "lua"})
 	// Execute user-defined script in Lua Runtime, in a child thread of the base
 	// engine.
 	// This function doesn't appear to add any references to the child thread to
@@ -138,13 +141,12 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 	L := eng.PrivilegedSandbox()
 	err = L.DoFile(eng.Config.DeliverScript)
 	if err != nil {
-		luaLog.Error("Error loading eventLoop file: %s", err.Error())
+		log15.Error("Error loading eventLoop file", log15.Ctx{"context": "lua", "error": err})
 		return false, err
 	}
-	luaLog.Info("Calling `eventLoop` function from Lua")
+	log15.Info("Calling `eventLoop` function from Lua", log15.Ctx{"context": "lua"})
 	// Database object with whitelisted methods; the whitelist is in NewEngine
 	privDB := luar.New(L, eng.DB.PrivilegedDBWrapper())
-	evTimer := luaLog.Timer()
 	// Run expected "eventLoop" function with arguments "database", "message".
 	err = L.CallByParam(
 		lua.P{
@@ -156,10 +158,9 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 		privDB,
 		luar.New(L, e))
 	if err != nil {
-		luaLog.Error("Error executing eventLoop function: %s", err.Error())
+		log15.Error("Error executing eventLoop function", log15.Ctx{"context": "lua", "error": err})
 		return false, err
 	}
-	evTimer.End("Executed eventLoop successfully.")
 	// Get three returned arguments, do something about them.
 	//e2 := eng.Lua.Get(1)     // message to send; should be same as e, verify?
 	errmsg := L.Get(3) // Either a string error or nil
@@ -183,26 +184,32 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	thismail, err := email.NewEmailFromReader(r)
 	if err != nil {
-		imapLog.Error("Received email but failed to parse: %s", err.Error())
+		r.Seek(0, 0)
+		ioutil.ReadAll(r)
+		erroneousBody, err2 := ioutil.ReadAll(r)
+		if err2 != nil {
+			panic("Error getting body from bad email, to report actual error: " + err2.Error())
+		}
+		log15.Error("Received email but failed to parse", log15.Ctx{"context": "imap", "error": err, "email": string(erroneousBody)})
 		return err
 	}
 	// Check for header indicating this was sent BY the list to itself (common pattern)
 	if thismail.Headers.Get("sent-from-listless") == eng.Config.ListAddress {
-		imapLog.Info("Received mail with a sent-from-listless header matching own. Ignoring.")
+		log15.Info("Received mail with a sent-from-listless header matching own. Ignoring.", log15.Ctx{"context": "imap"})
 		return nil
 	}
-	imapLog.Info("Received mail addressed TO: %s", strings.Join(thismail.To, ", "))
+	log15.Info("Received mail addressed to..", log15.Ctx{"context": "imap", "to": strings.Join(thismail.To, ", ")})
 	luaMail := WrapEmail(thismail)
 	ok, err := eng.ProcessMail(luaMail)
 	if err != nil {
-		luaLog.Error("Error calling ProcessMail handler: %s", err.Error())
+		log15.Error("Error calling ProcessMail handler", log15.Ctx{"context": "lua", "error": err})
 		return err
 	}
 	if !ok {
-		smtpLog.Info("No error occurred but not sending message on instruction from Lua.")
+		log15.Debug("No error occurred, but not sending message on instruction from Lua", log15.Ctx{"context": "smtp"})
 		return nil
 	}
-	smtpLog.Info("Outgoing email subject: %s", luaMail.Subject)
+	log15.Info("Outgoing email", log15.Ctx{"context": "smtp", "subject": luaMail.Subject})
 	// Set header to indicate that this was sent by Listless, in case it loops around
 	// somehow (some lists retain the "To: <list@address.com>" header unchanged).
 	luaMail.Headers.Set("sent-from-listless", eng.Config.ListAddress)
@@ -211,10 +218,10 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	// Patched to allow excluding of variadic emails added after auth.
 	err = luaMail.Send(eng.Config.smtpAddr, auth, eng.Config.ListAddress)
 	if err != nil {
-		smtpLog.Error("Error sending message by SMTP: %s", err.Error())
+		log15.Error("Error sending message by SMTP", log15.Ctx{"context": "smtp", "error": err})
 		return err
 	}
-	smtpLog.Info("Sent message successfully: %s", luaMail.Subject)
+	log15.Info("Sent message successfully", log15.Ctx{"context": "smtp", "subject": luaMail.Subject})
 	return nil
 }
 
@@ -226,9 +233,9 @@ func (eng *Engine) DeliveryLoop(c imapclient.Client, inbox, pattern string, deli
 	for {
 		n, err := imapclient.DeliverOne(c, inbox, pattern, deliver, outbox, errbox)
 		if err != nil {
-			imapLog.Error("Error during DeliveryLoop cycle - Deliveries %d; Error: %s", n, err.Error())
+			log15.Error("Error during DeliveryLoop cycle", log15.Ctx{"context": "imap", "deliveries": n, "error": err})
 		} else {
-			imapLog.Info("DeliveryLoop delivered: ", n)
+			log15.Info("DeliveryLoop complete", log15.Ctx{"context": "imap", "delivered": n})
 		}
 		select {
 		case _, ok := <-closeCh:

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"gopkg.in/inconshreveable/log15.v2"
+
 	"github.com/boltdb/bolt"
 	"github.com/layeh/gopher-luar"
 )
@@ -181,7 +183,7 @@ func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) 
 		})
 	})
 	if err != nil {
-		dbLog.Error("Error in goGetAllSubscribers: %s", err.Error())
+		log15.Error("Error in goGetAllSubscribers", log15.Ctx{"context": "db", "error": err})
 	}
 	return subscribers
 }
