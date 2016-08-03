@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"fmt"
 
 	"gopkg.in/inconshreveable/log15.v2"
 
@@ -84,6 +85,71 @@ func execModeF() {
 	if err != nil {
 		log15.Error("Failed to execute script", log15.Ctx{"context": "setup", "error": err, "script": *execScript})
 		log.Fatal(err)
+	}
+}
+
+func subModeF() {
+	log15.Info("Starting in subscriber mode", log15.Ctx{"context": "setup"})
+	config := loadSettings(*subConfigfile)
+	log15.Info("Loading Engine", log15.Ctx{"context": "setup"})
+	engine, err := NewEngine(config)
+	if err != nil {
+		log15.Error("Failed to load Engine", log15.Ctx{"context": "setup", "error": err})
+		log.Fatal(err)
+	}
+	//subAddMod = subMode.Flag("moderator", "Make new user a moderator").Default("false").Bool()
+	//subAddPost = subMode.Flag("can-post", "Allow new user to post").Default("true").Bool()
+	//subEmail = subMode.Arg("email", "Location of config file.").String()
+	//subName = subMode.Arg("name", "Location of config file.").String()
+	switch *subAction {
+	case "add": {
+    if subEmail == nil || subName == nil {
+			panic("Missing email or name argument for new subscriber.")
+		}
+		meta := engine.DB.CreateSubscriber(*subEmail, *subName, *subAddPost, *subAddMod)
+		err = engine.DB.UpdateSubscriber(*subName, meta)
+		if err != nil {
+			panic(err)
+		}
+	}
+	case "update": {
+	  if subEmail == nil {
+			panic("Missing email argument to update subscriber")
+		}
+		meta, err := engine.DB.GetSubscriber(*subEmail)
+		if err != nil {
+			panic(err)
+		}
+		if subName != nil {
+			meta.Name = *subName
+		}
+		if subAddPost != nil {
+			meta.AllowedPost = *subAddPost
+		}
+		if subAddMod != nil {
+			meta.Moderator = *subAddMod
+		}
+    err = engine.DB.UpdateSubscriber(*subEmail, meta)
+		if err != nil {
+			panic(err)
+		}
+	}
+	case "remove": {
+		if subEmail == nil {
+			panic("Missing email argument to remove subscriber")
+		}
+		err = engine.DB.DelSubscriber(*subEmail)
+		if err != nil {
+			panic(err)
+		}
+	}
+	case "list": {
+		fmt.Println("Email,Name,Moderator,AllowedPost")
+		engine.DB.forEachSubscriber(func(email string, meta *MemberMeta) error {
+			fmt.Printf("%s,%s,%v,%v\n",email,meta.Name,meta.Moderator,meta.AllowedPost)
+			return nil
+		})
+	}
 	}
 }
 

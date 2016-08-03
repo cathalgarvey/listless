@@ -198,7 +198,7 @@ func (db *ListlessDB) forEachSubscriber(viewer subscriberViewF) error {
 		return members.ForEach(func(email_b, meta_b []byte) error {
 			oldemail := string(email_b)
 			meta := MemberMeta{}
-			err := json.Unmarshal(metabytes, &meta)
+			err := json.Unmarshal(meta_b, &meta)
 			if err != nil {
 				return err
 			}
@@ -231,7 +231,7 @@ func (db *ListlessDB) forEachSubscriberRW(updater subscriberUpdateF) error {
 		return members.ForEach(func(email_b, meta_b []byte) error {
 			oldemail := string(email_b)
 			meta := MemberMeta{}
-			err := json.Unmarshal(metabytes, &meta)
+			err := json.Unmarshal(meta_b, &meta)
 			if err != nil {
 				return err
 			}
