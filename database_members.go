@@ -187,3 +187,79 @@ func (db *ListlessDB) goGetAllSubscribers(modsOnly bool) (subscribers []string) 
 	}
 	return subscribers
 }
+
+// This is a function that can iterate over members to gather data.
+type subscriberViewF func(email string, meta *MemberMeta) error
+
+// A read-only iteration over the members in the database. Faster and safer than forEachSubscriberRW
+func (db *ListlessDB) forEachSubscriber(viewer subscriberViewF) error {
+	return db.View(func(tx *bolt.Tx) error {
+		members := tx.Bucket([]byte(memberBucketName))
+		return members.ForEach(func(email_b, meta_b []byte) error {
+			oldemail := string(email_b)
+			meta := MemberMeta{}
+			err := json.Unmarshal(metabytes, &meta)
+			if err != nil {
+				return err
+			}
+			return viewer(oldemail, &meta)
+		})
+	})
+}
+
+// This is a function that can be used to iterate over members and optionally make
+// changes to them.
+type subscriberUpdateF func(email string, meta *MemberMeta) (edit bool, newemail string, newmeta *MemberMeta, err error)
+
+// A RW iteration over subscribers. If the provided function returns edit=false, then
+// no changes are made (a read only operation). In this case, the iteration is
+// safe and the database will be guaranteed consistent, within Bolt's usual guarantees.
+// If, however, it provides edit=true, then the following rules apply:
+// * If the returned MemberMeta is nil, then the original entry is deleted.
+// * If the returned MemberMeta is not nil, and the returned string is empty,
+//   then the data for the selected user is modified in-place in the database.
+// * If the returned MemberMeta is not nil, and the returned string is non-empty,
+//   then the original data is deleted and the new MemberMeta is entered under
+//   the new string key (expected to be an email address, as usual).
+// Please note: The above operations are queued during iteration but do not
+// take place until afterwards, as they must get a lock on the database. This
+// means that forEachSubscriber is not a safe operation if the database might
+// get interrupted; it is built for convenience, not safety!
+func (db *ListlessDB) forEachSubscriberRW(updater subscriberUpdateF) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		members := tx.Bucket([]byte(memberBucketName))
+		return members.ForEach(func(email_b, meta_b []byte) error {
+			oldemail := string(email_b)
+			meta := MemberMeta{}
+			err := json.Unmarshal(metabytes, &meta)
+			if err != nil {
+				return err
+			}
+			edit, newemail, newmeta, err := updater(oldemail, &meta)
+			if err != nil {
+				return err
+			}
+			if !edit {
+				return nil
+			}
+			if newmeta == nil {
+				// Delete original entry. This spins up a goroutine that will wait for an Update tx.
+				go db.DelSubscriber(oldemail)
+				return nil
+			} else {
+				// Edit original entry. This may involve scheduling a deletion.
+				if newemail != "" {
+					// spin up a delete for the old entry and an add for the new entry.
+					// Both will await their turn so the database could get screwed during
+					// these ops.
+					go db.DelSubscriber(oldemail)
+					go db.UpdateSubscriber(newemail, newmeta)
+					return nil
+				} else {
+					go db.UpdateSubscriber(oldemail, newmeta)
+				}
+			}
+			return nil
+		})
+	})
+}

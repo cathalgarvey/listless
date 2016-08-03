@@ -12,8 +12,6 @@ import (
 )
 
 var (
-	// TODO; set two modes, one which runs the list loop, and another that loads
-	// DB/Conf and runs arbitrary lua on them once, to assist with setup.
 	app            = kingpin.New("listless", "A simple, lua-scripted discussion/mailing list driver over IMAP/SMTP")
 	loopMode       = app.Command("loop", "Run the mailing list from a lua configuration file.")
 	loopConfigfile = loopMode.Arg("configfile", "Location of config file.").Required().String()
@@ -22,15 +20,13 @@ var (
 	execConfigfile = execMode.Arg("configfile", "Location of config file.").Required().String()
 	execScript     = execMode.Arg("script", "Location of lua script to execute.").Required().String()
 
-	// Logger for the Lua EventLoop.
-	//luaLog = logger.New("lua-eventLoop")
-	// Logger for Database operations.
-	//dbLog = logger.New("database")
-	// Logger for Setup/Teardown
-	//llLog = logger.New("listless")
-	// Loggers for IMAP/SMTP errors
-	//imapLog = logger.New("imap")
-	//smtpLog = logger.New("smtp")
+  subMode = app.Command("sub", "Add / Remove subscribers to a list.")
+	subConfigfile = subMode.Arg("configfile", "Location of config file.").Required().String()
+	subAction = subMode.Arg("action", "Location of config file.").Required().Enum("add", "update", "remove", "list")
+	subAddMod = subMode.Flag("moderator", "Make new user a moderator").Default("false").Bool()
+	subAddPost = subMode.Flag("can-post", "Allow new user to post").Default("true").Bool()
+	subEmail = subMode.Arg("email", "Location of config file.").String()
+	subName = subMode.Arg("name", "Location of config file.").String()
 )
 
 func main() {
