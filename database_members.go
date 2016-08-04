@@ -40,7 +40,7 @@ func (db *ListlessDB) CreateSubscriber(usremail, usrname string, allowedpost, mo
 		Moderator:   moderator,
 		AllowedPost: allowedpost,
 		Name:        usrname,
-		Email:       usremail,
+		Email:       normaliseEmail(usremail),
 	}
 	return &m
 }
@@ -70,6 +70,7 @@ func (db *ListlessDB) IsModerator(email string) bool {
 func (db *ListlessDB) IsAllowedPost(email string) bool {
 	sub, err := db.GetSubscriber(email)
 	if err != nil {
+		log15.Error("Error in IsAllowedPost getting subscriber", log15.Ctx{"context": "db", "error": err})
 		return false
 	}
 	return sub.AllowedPost

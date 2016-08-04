@@ -32,6 +32,19 @@ type Email struct {
 	Sender           string
 }
 
+func (em *Email) isValid() bool {
+	if em.Email == nil {
+		return false
+	}
+	if em.inRecipientLists == nil {
+		return false
+	}
+	if em.Sender == "" {
+		return false
+	}
+	return true
+}
+
 // EmailPermittedMethods are the struct fields and methods that are permitted
 // within Lua. Everything else is blacklisted, to ensure that methods that present
 // security risks are never permitted in Lua, such as: https://godoc.org/github.com/jordan-wright/email#Email.AttachFile
@@ -39,7 +52,7 @@ var EmailPermittedMethods = []string{
 	"From", "To", "Bcc", "Cc", "Subject", "Text", "HTML", "Headers", "Attachments", "ReadReceipt",
 	"GetText", "SetText", "GetHeader", "SetHeader", "AddHeader", "DelHeader",
 	"AddToRecipient", "AddCcRecipient", "AddBccRecipient", "AddRecipient", "AddRecipientList",
-	"ClearRecipients", "RemoveRecipient",
+	"ClearRecipients", "RemoveRecipient", "Sender",
 }
 
 // WrapEmail - given an email.Email object, return the wrapper used in this
@@ -48,8 +61,16 @@ func WrapEmail(e *email.Email) *Email {
 	newe := new(Email)
 	newe.Email = e
 	newe.inRecipientLists = make(map[string]struct{})
-	sender, _ := parseExpressiveEmail(e.From)
-	newe.Sender = normaliseEmail(sender)
+	sender, err := parseExpressiveEmail(e.From)
+	if err != nil {
+		//panic(err) // TODO: Testing only disable in production!
+	}
+	nsender := normaliseEmail(sender)
+	if nsender == "" {
+		newe.Sender = sender
+	} else {
+		newe.Sender = nsender
+	}
 	return newe
 }
 

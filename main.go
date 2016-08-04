@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"fmt"
 
 	"gopkg.in/inconshreveable/log15.v2"
 
@@ -21,13 +21,13 @@ var (
 	execConfigfile = execMode.Arg("configfile", "Location of config file.").Required().String()
 	execScript     = execMode.Arg("script", "Location of lua script to execute.").Required().String()
 
-  subMode = app.Command("sub", "Add / Remove subscribers to a list.")
+	subMode       = app.Command("sub", "Add / Remove subscribers to a list.")
 	subConfigfile = subMode.Arg("configfile", "Location of config file.").Required().String()
-	subAction = subMode.Arg("action", "Location of config file.").Required().Enum("add", "update", "remove", "list")
-	subAddMod = subMode.Flag("moderator", "Make new user a moderator").Default("false").Bool()
-	subAddPost = subMode.Flag("can-post", "Allow new user to post").Default("true").Bool()
-	subEmail = subMode.Arg("email", "Location of config file.").String()
-	subName = subMode.Arg("name", "Location of config file.").String()
+	subAction     = subMode.Arg("action", "Member edit command to use: list | add | update | remove").Required().Enum("add", "update", "remove", "list")
+	subAddMod     = subMode.Flag("moderator", "Make new user a moderator").Default("false").Bool()
+	subAddPost    = subMode.Flag("can-post", "Allow new user to post").Default("true").Bool()
+	subEmail      = subMode.Arg("email", "Email address of new/edited/removed user").String()
+	subName       = subMode.Arg("name", "Name of new/edited user").String()
 )
 
 func main() {
@@ -40,6 +40,10 @@ func main() {
 	case execMode.FullCommand():
 		{
 			execModeF()
+		}
+	case subMode.FullCommand():
+		{
+			subModeF()
 		}
 	default:
 		{
@@ -97,59 +101,60 @@ func subModeF() {
 		log15.Error("Failed to load Engine", log15.Ctx{"context": "setup", "error": err})
 		log.Fatal(err)
 	}
-	//subAddMod = subMode.Flag("moderator", "Make new user a moderator").Default("false").Bool()
-	//subAddPost = subMode.Flag("can-post", "Allow new user to post").Default("true").Bool()
-	//subEmail = subMode.Arg("email", "Location of config file.").String()
-	//subName = subMode.Arg("name", "Location of config file.").String()
 	switch *subAction {
-	case "add": {
-    if subEmail == nil || subName == nil {
-			panic("Missing email or name argument for new subscriber.")
+	case "add":
+		{
+			if subEmail == nil || subName == nil || *subEmail == "" || *subName == "" {
+				panic("Missing email or name argument for new subscriber.")
+			}
+			log15.Info("Adding user to subscriber", log15.Ctx{"context": "setup", "subEmail": *subEmail, "subName": *subName})
+			meta := engine.DB.CreateSubscriber(*subEmail, *subName, *subAddPost, *subAddMod)
+			err = engine.DB.UpdateSubscriber(*subEmail, meta)
+			if err != nil {
+				panic(err)
+			}
 		}
-		meta := engine.DB.CreateSubscriber(*subEmail, *subName, *subAddPost, *subAddMod)
-		err = engine.DB.UpdateSubscriber(*subName, meta)
-		if err != nil {
-			panic(err)
+	case "update":
+		{
+			if subEmail == nil {
+				panic("Missing email argument to update subscriber")
+			}
+			meta, err := engine.DB.GetSubscriber(*subEmail)
+			if err != nil {
+				panic(err)
+			}
+			if subName != nil {
+				meta.Name = *subName
+			}
+			if subAddPost != nil {
+				meta.AllowedPost = *subAddPost
+			}
+			if subAddMod != nil {
+				meta.Moderator = *subAddMod
+			}
+			err = engine.DB.UpdateSubscriber(*subEmail, meta)
+			if err != nil {
+				panic(err)
+			}
 		}
-	}
-	case "update": {
-	  if subEmail == nil {
-			panic("Missing email argument to update subscriber")
+	case "remove":
+		{
+			if subEmail == nil {
+				panic("Missing email argument to remove subscriber")
+			}
+			err = engine.DB.DelSubscriber(*subEmail)
+			if err != nil {
+				panic(err)
+			}
 		}
-		meta, err := engine.DB.GetSubscriber(*subEmail)
-		if err != nil {
-			panic(err)
+	case "list":
+		{
+			fmt.Println("Email,Name,Moderator,AllowedPost")
+			engine.DB.forEachSubscriber(func(email string, meta *MemberMeta) error {
+				fmt.Printf("%s,%s,%v,%v\n", email, meta.Name, meta.Moderator, meta.AllowedPost)
+				return nil
+			})
 		}
-		if subName != nil {
-			meta.Name = *subName
-		}
-		if subAddPost != nil {
-			meta.AllowedPost = *subAddPost
-		}
-		if subAddMod != nil {
-			meta.Moderator = *subAddMod
-		}
-    err = engine.DB.UpdateSubscriber(*subEmail, meta)
-		if err != nil {
-			panic(err)
-		}
-	}
-	case "remove": {
-		if subEmail == nil {
-			panic("Missing email argument to remove subscriber")
-		}
-		err = engine.DB.DelSubscriber(*subEmail)
-		if err != nil {
-			panic(err)
-		}
-	}
-	case "list": {
-		fmt.Println("Email,Name,Moderator,AllowedPost")
-		engine.DB.forEachSubscriber(func(email string, meta *MemberMeta) error {
-			fmt.Printf("%s,%s,%v,%v\n",email,meta.Name,meta.Moderator,meta.AllowedPost)
-			return nil
-		})
-	}
 	}
 }
 

@@ -25,6 +25,8 @@ var (
 	ErrErrValNotStringOrNil = errors.New("'error' value returned from eventLoop function in Lua is neither string nor nil type")
 	// ErrOkNotBoolean - returned from ProcessMail when the 'ok' value in eventLoop is absent or not boolean.
 	ErrOkNotBoolean = errors.New("'ok' value returned from eventLoop function in Lua is not boolean")
+	// ErrEmailInvalid
+	ErrEmailInvalid = errors.New("listless failed to wrap or parse email, cannot proceed safely")
 )
 
 // Engine is the state and event looper that manages the account and list.
@@ -200,6 +202,11 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 	}
 	log15.Info("Received mail addressed to..", log15.Ctx{"context": "imap", "to": strings.Join(thismail.To, ", ")})
 	luaMail := WrapEmail(thismail)
+	if luaMail == nil || !luaMail.isValid() {
+		log15.Error("Received email but failed to wrap", log15.Ctx{"context": "imap", "error": ErrEmailInvalid, "email": thismail})
+		return ErrEmailInvalid
+	}
+	log15.Info("Email about to be processed", log15.Ctx{"context": "imap", "email": luaMail})
 	ok, err := eng.ProcessMail(luaMail)
 	if err != nil {
 		log15.Error("Error calling ProcessMail handler", log15.Ctx{"context": "lua", "error": err})
