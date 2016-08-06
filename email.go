@@ -63,7 +63,7 @@ func WrapEmail(e *email.Email) *Email {
 	newe.inRecipientLists = make(map[string]struct{})
 	sender, err := parseExpressiveEmail(e.From)
 	if err != nil {
-		//panic(err) // TODO: Testing only disable in production!
+		log15.Error("Error parsing email", log15.Ctx{"error": err, "context": "lua", "email": e})
 	}
 	nsender := normaliseEmail(sender)
 	if nsender == "" {
@@ -267,8 +267,11 @@ func (em *Email) normaliseEmailSlice(field string, emailSlice []string) []string
 		// First, split multi-entry bits if necessary.. Look for ">" chars that don't
 		// end the line, and try to extract emails from each such substring using
 		// parseExpressiveEmail()
-		// TODO: Replace parseMultiExpressiveEmails with https://golang.org/pkg/net/mail/#ParseAddressList
-		multiEntries := parseMultiExpressiveEmails(entry)
+		multiEntries, err := parseMultiExpressiveEmails(entry)
+		if err != nil {
+			log15.Error("Error parsing address(es) from field", log15.Ctx{"context": "imap", "error": err, "entry": entry})
+			continue
+		}
 		for _, e := range multiEntries {
 			e, err := parseExpressiveEmail(e)
 			if err != nil {
@@ -317,59 +320,26 @@ func normaliseEmail(email string) string {
 // parseExpressiveEmail - Given a line "Foo Bar <foo@bar.com>", return "foo@bar.com".
 // For "foo@bar.com" return simply that!
 func parseExpressiveEmail(emailLine string) (string, error) {
-	emailLine = strings.TrimSpace(emailLine)
-	if normE := normaliseEmail(emailLine); normE != "" {
-		return normE, nil
+	// TODO: Replace with mail.ParseAddress
+	parsed, err := mail.ParseAddress(emailLine)
+	if err != nil {
+		return "", err
 	}
-	// - Must have the brackets
-	if !(strings.Contains(emailLine, "<") && strings.Contains(emailLine, ">")) {
-		return emailLine, ErrEmailUnparseable
-	}
-	// Brackets must come in correct order.
-	openBr := strings.LastIndex(emailLine, "<")
-	closBr := strings.LastIndex(emailLine, ">")
-	if !(openBr < closBr) {
-		return emailLine, ErrEmailUnparseable
-	}
-	parsed := emailLine[openBr+1 : closBr]
-	normed := normaliseEmail(parsed)
-	if normed == "" {
-		return emailLine, ErrEmailUnparseable
-	}
-	return normed, nil
+	return normaliseEmail(parsed.Address), nil
 }
 
 // Given a string like "Cathal Garvey <cathal@foo.com>, Stephen Barr <steve@foo.com>"
 // return []string{"Cathal Garvey <cathal@foo.com>", "Stephen Barr <steve@foo.com>"}
-func parseMultiExpressiveEmails(entry string) []string {
-	// Shortcuts
-	if validator.IsValidEmail(entry) {
-		return []string{entry}
+func parseMultiExpressiveEmails(entry string) ([]string, error) {
+	out := make([]string, 0)
+	parsed, err := mail.ParseAddressList(entry)
+	if err != nil {
+		return nil, err
 	}
-	if !(strings.Contains(entry, ">") && strings.Contains(entry, ",")) {
-		return []string{entry}
+	for _, m := range parsed {
+		out = append(out, m.String())
 	}
-	var entries []string
-	// Find each comma-after-closebracket and slice around it.
-	for i := 0; i < len(entry); {
-		nextBracket := strings.Index(entry[i:], ">")
-		if nextBracket == -1 {
-			entries = append(entries, entry[i:])
-			break
-		}
-		// nextComma gets the index *after the bracket* so needs to be added to
-		// the nextBracket index!
-		distCommaAfterBracket := strings.Index(entry[nextBracket:], ",")
-		if distCommaAfterBracket == -1 {
-			entries = append(entries, entry[i:])
-			break
-		}
-		nextComma := distCommaAfterBracket + nextBracket
-		chunk := entry[i:nextComma]
-		entries = append(entries, chunk)
-		i = nextComma + 1
-	}
-	return entries
+	return out, nil
 }
 
 // Send an email using the given host and SMTP auth (optional), returns any error thrown by smtp.SendMail

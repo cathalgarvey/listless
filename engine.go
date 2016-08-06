@@ -5,12 +5,14 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
 
 	"gopkg.in/inconshreveable/log15.v2"
 
+	"github.com/cathalgarvey/gospf"
 	"github.com/cjoudrey/gluaurl"
 	"github.com/jordan-wright/email"
 	luajson "github.com/layeh/gopher-json"
@@ -64,6 +66,67 @@ func NewEngine(cfg *Config) (*Engine, error) {
 		return nil, err
 	}
 	return E, nil
+}
+
+func constructRFC5322(email, name string) string {
+	m := new(mail.Address)
+	m.Name = name
+	m.Address = email
+	return m.String()
+}
+
+// ChooseListSenderEmail selects either the original from-address or, if SPF policy
+// or local config forbids it, the list email address instead.
+func (eng *Engine) ChooseListSenderEmail(fromEmail string) string {
+	if eng.Config.SMTPIP == "" {
+		return fromEmail
+	}
+	// First, get or construct the "default" that is used if SPF forbids simply
+	// using the sender's mail.
+	deflt := func(fromEmail string) string {
+		// First, try to construct the original user's chosen name, but use the list
+		// address.
+		if parsed, err := mail.ParseAddress(fromEmail); err == nil {
+			if parsed.Name != "" {
+				return constructRFC5322(eng.Config.ListAddress, parsed.Name+" (SPF Blocked)")
+			}
+		}
+		// Second, try to construct using the subscriber's registered name, with the
+		// list address.
+		if meta, err := eng.DB.GetSubscriber(fromEmail); err == nil {
+			if meta.Name != "" {
+				return constructRFC5322(eng.Config.ListAddress, meta.Name+" (SPF Blocked)")
+			}
+		}
+		// Lastly, just use the sender's email username as their "name"
+		if emlbits := strings.SplitN(fromEmail, "@", 1); len(emlbits) == 2 {
+			if emlbits[0] != "" {
+				return constructRFC5322(eng.Config.ListAddress, emlbits[0]+" (SPF Blocked)")
+			}
+		}
+		// If even that failed, just use List address
+		return eng.Config.ListAddress
+	}(fromEmail)
+	ret, err := func(fromEmail string) (string, error) {
+		domain, err := spf.GetDomainFromEmail(fromEmail)
+		if err != nil {
+			return "", err
+		}
+		validated, err := spf.Validate(eng.Config.SMTPIP, domain)
+		if err != nil {
+			return "", err
+		}
+		if validated {
+			return fromEmail, nil
+		}
+		log15.Info("SPF policy appears to forbid using sender email for outgoing list mail, using constructed Sender", log15.Ctx{"context": "lua", "fromEmail": fromEmail, "using": deflt})
+		return deflt, nil
+	}(fromEmail)
+	if err != nil {
+		log15.Error("Error getting appropriate sender Email, checking SPF records (defaulting to list email)", log15.Ctx{"context": "lua", "error": err, "fromEmail": fromEmail})
+		return deflt
+	}
+	return ret
 }
 
 // Close all open database, scripting engine and IMAP connections.
@@ -161,6 +224,7 @@ func (eng *Engine) ProcessMail(e *Email) (ok bool, err error) {
 		luar.New(L, e))
 	if err != nil {
 		log15.Error("Error executing eventLoop function", log15.Ctx{"context": "lua", "error": err})
+		//panic(err)  // Disable in production!
 		return false, err
 	}
 	// Get three returned arguments, do something about them.
@@ -216,6 +280,13 @@ func (eng *Engine) Handler(r io.ReadSeeker, uid uint32, sha1 []byte) error {
 		log15.Debug("No error occurred, but not sending message on instruction from Lua", log15.Ctx{"context": "smtp"})
 		return nil
 	}
+	// Verify that using the actual sender is OK according to SPF records for
+	// sender Domain, otherwise fall back to list address.
+	newSender := eng.ChooseListSenderEmail(luaMail.Sender)
+	if newSender != luaMail.Sender {
+		log15.Info("Outgoing email sender changed for SPF policy", log15.Ctx{"context": "smtp", "original": luaMail.Sender, "new": newSender})
+	}
+	luaMail.Email.From = newSender
 	log15.Info("Outgoing email", log15.Ctx{"context": "smtp", "subject": luaMail.Subject})
 	// Set header to indicate that this was sent by Listless, in case it loops around
 	// somehow (some lists retain the "To: <list@address.com>" header unchanged).

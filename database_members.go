@@ -70,7 +70,7 @@ func (db *ListlessDB) IsModerator(email string) bool {
 func (db *ListlessDB) IsAllowedPost(email string) bool {
 	sub, err := db.GetSubscriber(email)
 	if err != nil {
-		log15.Error("Error in IsAllowedPost getting subscriber", log15.Ctx{"context": "db", "error": err})
+		log15.Error("Error in IsAllowedPost getting subscriber", log15.Ctx{"context": "db", "email": email, "error": err})
 		return false
 	}
 	return sub.AllowedPost
@@ -78,12 +78,15 @@ func (db *ListlessDB) IsAllowedPost(email string) bool {
 
 // GetSubscriber - Normalise email and fetch subscriber meta, if any.
 func (db *ListlessDB) GetSubscriber(email string) (*MemberMeta, error) {
-	email = normaliseEmail(email)
+	email, err := parseExpressiveEmail(email)
+	if err != nil {
+		return nil, err
+	}
 	if email == "" {
 		return nil, ErrInvalidEmail
 	}
 	sub := MemberMeta{}
-	err := db.View(func(tx *bolt.Tx) error {
+	err = db.View(func(tx *bolt.Tx) error {
 		members := tx.Bucket([]byte(memberBucketName))
 		if members == nil {
 			return ErrMemberBucketNotFound

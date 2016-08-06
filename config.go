@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"strconv"
 
 	"gopkg.in/inconshreveable/log15.v2"
@@ -21,6 +22,7 @@ type Config struct {
 	SMTPHost     string
 	SMTPPort     int
 	smtpAddr     string
+	SMTPIP       string
 	// Local stuff
 	ListAddress      string
 	Database         string
@@ -80,6 +82,19 @@ func ConfigFromState(L *lua.LState) *Config {
 	C.MessageFrequency = intOrDefault(L.GetGlobal("MessageFrequency"), 1)
 	C.PollFrequency = intOrDefault(L.GetGlobal("PollFrequency"), 60)
 	C.smtpAddr = C.SMTPHost + ":" + strconv.Itoa(C.SMTPPort)
+	C.SMTPIP = stringOrNothing(L.GetGlobal("SMTPIP"))
+	if C.SMTPIP == "" {
+		// Guess IP address by seeking DNS host for SMTPHost
+		ips, err := net.LookupIP(C.SMTPHost)
+		if err != nil {
+			panic(err)
+		}
+		if len(ips) != 1 {
+			panic("Failed to get unambiguous IP for SMTP server, to validate SPF records")
+		}
+		log15.Info("Using lookup-derived IP for SMTPHost as SMTPIP (for SPF)", log15.Ctx{"context": "setup", "SMTPIP": ips[0].String(), "SMTPHost": C.SMTPHost})
+		C.SMTPIP = ips[0].String()
+	}
 	if C.ListAddress == "" {
 		C.ListAddress = C.SMTPUsername + "@" + C.SMTPHost
 		log15.Info("Creating a uniquey 'ListAddress' config option as none was provided manually", log15.Ctx{"context": "setup", "ListAddress": C.ListAddress})
